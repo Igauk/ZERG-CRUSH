@@ -62,7 +62,7 @@ include_directories(SYSTEM
 )
 
 # Create the executable.
-add_executable(BasicSc2Bot ${SOURCES_BASICSC2BOT})
+add_executable(BasicSc2Bot ${SOURCES_BASICSC2BOT} cpp-sc2/examples/zerg_crush.cpp)
 target_link_libraries(BasicSc2Bot
     sc2api sc2lib sc2utils
 )

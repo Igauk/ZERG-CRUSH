@@ -354,3 +354,4 @@ MigrationBackup/
 
 build/
 cmake-build-debug/
+.idea/

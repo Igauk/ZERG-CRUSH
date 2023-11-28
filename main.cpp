@@ -6,10 +6,11 @@
 
 #include "BasicSc2Bot.h"
 #include "LadderInterface.h"
+#include "cpp-sc2/examples/common/bot_examples.h"
 
 // LadderInterface allows the bot to be tested against the built-in AI or
 // played against other bots
 int main(int argc, char* argv[]) {
-	RunBot(argc, argv, new BasicSc2Bot(), sc2::Race::Terran);
+	RunBot(argc, argv, new sc2::ZergCrush(), sc2::Race::Terran);
 	return 0;
 }

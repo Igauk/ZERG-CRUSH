@@ -353,3 +353,5 @@ MigrationBackup/
 .ionide/
 
 build/
+cmake-build-debug/
+.idea/

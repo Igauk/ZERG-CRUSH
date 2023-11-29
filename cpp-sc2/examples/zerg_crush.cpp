@@ -56,26 +56,6 @@ bool ZergCrush::TryBuildSCV() {
     return false;
 }
 
-bool ZergCrush::UnitTryBuildStructure(AbilityID ability_type_for_structure, const Unit *unit, Point2D location,
-                                      bool isExpansion = false) {
-    if (!isExpansion) {
-        for (const auto &expansion: expansions_) {
-            if (Distance2D(location, Point2D(expansion.x, expansion.y)) < 7) {
-                // Cannot build where we might expand TODO IAN: some of these expansion locations could be
-                //                                      for the enemy... we may not want to make this check
-                return false;
-            }
-        }
-    }
-
-    // Check to see if unit can build there
-    if (Query()->Placement(ability_type_for_structure, location)) {
-        Actions()->UnitCommand(unit, ability_type_for_structure, location); // Queue build
-        return true;
-    }
-    return false;
-}
-
 bool ZergCrush::TryBuildSupplyDepot() {
     // TODO IAN: replace this with a more specific function that builds at a given location
     const ObservationInterface *observation = Observation();
@@ -112,128 +92,41 @@ void ZergCrush::BuildArmy() {
     const ObservationInterface *observation = Observation();
     // Grab army and building counts
     Units barracks = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKS));
-    Units factorys = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORY));
+    Units factories = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORY));
     Units starports = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORT));
-
-    size_t widowmine_count = CountUnitTypeTotal(observation, widow_mine_types, UNIT_TYPEID::TERRAN_FACTORY,
-                                                ABILITY_ID::TRAIN_WIDOWMINE);
-    size_t siege_tank_count = CountUnitTypeTotal(observation, siege_tank_types, UNIT_TYPEID::TERRAN_FACTORY,
-                                                 ABILITY_ID::TRAIN_SIEGETANK);
-    size_t marine_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS,
-                                             ABILITY_ID::TRAIN_MARINE);
-    size_t marauder_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_MARAUDER,
-                                               UNIT_TYPEID::TERRAN_BARRACKS, ABILITY_ID::TRAIN_MARAUDER);
-    size_t reaper_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS,
-                                             ABILITY_ID::TRAIN_REAPER);
-    size_t ghost_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_GHOST, UNIT_TYPEID::TERRAN_BARRACKS,
-                                            ABILITY_ID::TRAIN_GHOST);
-    size_t medivac_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_MEDIVAC,
-                                              UNIT_TYPEID::TERRAN_STARPORT, ABILITY_ID::TRAIN_MEDIVAC);
-    size_t raven_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_RAVEN, UNIT_TYPEID::TERRAN_STARPORT,
-                                            ABILITY_ID::TRAIN_RAVEN);
-    size_t battlecruiser_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_MEDIVAC,
-                                                    UNIT_TYPEID::TERRAN_STARPORT, ABILITY_ID::TRAIN_BATTLECRUISER);
-    size_t banshee_count = CountUnitTypeTotal(observation, UNIT_TYPEID::TERRAN_MEDIVAC,
-                                              UNIT_TYPEID::TERRAN_STARPORT, ABILITY_ID::TRAIN_BANSHEE);
-
-    if (CountUnitType(observation, UNIT_TYPEID::TERRAN_GHOSTACADEMY) +
-        CountUnitType(observation, UNIT_TYPEID::TERRAN_FACTORY) > 0) {
-        if (!nukeBuilt) {
-            Units ghosts = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_GHOST));
-            if (observation->GetMinerals() > 100 && observation->GetVespene() > 100) {
-                TryBuildUnit(ABILITY_ID::BUILD_NUKE, UNIT_TYPEID::TERRAN_GHOSTACADEMY);
-            }
-            if (!ghosts.empty()) {
-                AvailableAbilities abilities = Query()->GetAbilitiesForUnit(ghosts.front());
-                for (const auto &ability: abilities.abilities) {
-                    if (ability.ability_id == ABILITY_ID::EFFECT_NUKECALLDOWN) {
-                        nukeBuilt = true;
-                    }
-                }
-            }
-
-        }
-    }
-
 
     if (!starports.empty()) {
         for (const auto &starport: starports) {
-            if (observation->GetUnit(starport->add_on_tag) == nullptr) {
-                if (starport->orders.empty() && medivac_count < 5) {
-                    Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_MEDIVAC);
-                }
-                continue;
-            } else {
-                if (starport->orders.empty() && raven_count < 2) {
-                    Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_RAVEN);
-                }
-                if (CountUnitType(observation, UNIT_TYPEID::TERRAN_FUSIONCORE) > 0) {
-                    if (starport->orders.empty() && battlecruiser_count < 2) {
-                        Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_BATTLECRUISER);
-                        if (battlecruiser_count < 1) {
-                            return;
-                        }
-                    }
-                }
-                if (starport->orders.empty() && banshee_count < 2) {
-                    Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_BANSHEE);
-                }
+            if (starport->orders.empty()) {
+                Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_MEDIVAC);
             }
         }
     }
 
     if (!barracks.empty()) {
         for (const auto &barrack: barracks) {
-            if (observation->GetUnit(barrack->add_on_tag) == nullptr) {
-                continue;
-            }
-            if (observation->GetUnit(barrack->add_on_tag)->unit_type == UNIT_TYPEID::TERRAN_BARRACKSREACTOR) {
-                if (barrack->orders.size() < 2 && marine_count < 20) {
-                    Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARINE);
-                } else if (observation->GetMinerals() > 1000 && observation->GetVespene() < 300) {
-                    Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARINE);
-                }
-            } else {
-                if (barrack->orders.empty()) {
-                    if (reaper_count < 2) {
-                        Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_REAPER);
-                    } else if (ghost_count < 4) {
-                        Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_GHOST);
-                    } else if (marauder_count < 10) {
-                        Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARAUDER);
-                    } else {
-                        Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARINE);
-                    }
-                }
+            if (barrack->orders.empty()) {
+                Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARINE);
             }
         }
     }
 
-    if (!factorys.empty()) {
-        for (const auto &factory: factorys) {
-            if (observation->GetUnit(factory->add_on_tag) == nullptr) {
-                continue;
-            }
-            if (observation->GetUnit(factory->add_on_tag)->unit_type == UNIT_TYPEID::TERRAN_FACTORYREACTOR) {
-                if (factory->orders.size() < 2 && widowmine_count < 4) {
-                    Actions()->UnitCommand(factory, ABILITY_ID::TRAIN_WIDOWMINE);
-                }
-            } else {
-                if (factory->orders.empty() && siege_tank_count < 7) {
-                    Actions()->UnitCommand(factory, ABILITY_ID::TRAIN_SIEGETANK);
-                }
+    if (!factories.empty()) {
+        for (const auto &factory: factories) {
+            if (factory->orders.empty()) {
+                Actions()->UnitCommand(factory, ABILITY_ID::TRAIN_HELLION);
             }
         }
     }
 }
 
-void ZergCrush::BuildOrderTest() {
+void ZergCrush::ManageMacro() {
     auto observation = Observation();
-    auto nextStruct = tvtBuildOrder.nextStructureToBuild(observation);
-    if (nextStruct.has_value()) {
-        auto structure = nextStruct.value();
+    auto structures = buildOrder.structuresToBuild(observation);
+    for(const auto &structure: structures) {
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
+                // TODO: if not wall then TryBuildSupplyDepotWall()
                 TryBuildSupplyDepot();
                 break;
             case UNIT_TYPEID::TERRAN_REFINERY:
@@ -242,16 +135,21 @@ void ZergCrush::BuildOrderTest() {
             case UNIT_TYPEID::TERRAN_COMMANDCENTER:
                 TryBuildExpansionCom();
                 break;
-            case UNIT_TYPEID::TERRAN_ORBITALCOMMAND:
-                Actions()->UnitCommand(observation->GetUnit(structure->getBaseStruct(observation).value()), ABILITY_ID::MORPH_ORBITALCOMMAND);
-                structure->built = true;
+            case UNIT_TYPEID::TERRAN_ORBITALCOMMAND: {
+                std::optional<Unit> commandCenter = structure->getBaseStruct(observation);
+                if (commandCenter.has_value()) {
+                    Actions()->UnitCommand(&commandCenter.value(), ABILITY_ID::MORPH_ORBITALCOMMAND);
+                } else {
+                    // All command centers have become orbital commands
+                    structure->built = true;
+                }
                 break;
+            }
             default:
                 if (structure->isAddOn()) {
-                    std::optional<Tag> baseStruct = structure->getBaseStruct(observation);
+                    std::optional<Unit> baseStruct = structure->getBaseStruct(observation);
                     if (baseStruct.has_value()) {
-                        // TODO: cannot track building of addons directly it seems...
-                        structure->built = TryBuildAddOn(structure->getAbilityId(), baseStruct.value());
+                        structure->built = TryBuildAddOn(structure->getAbilityId(), baseStruct.value().tag);
                     }
                     break;
                 }
@@ -260,169 +158,19 @@ void ZergCrush::BuildOrderTest() {
     }
 }
 
-void ZergCrush::ManageMacro() {
-    // Until the first SCV has been built do nothing
-    if (!firstAdditionalSCV) { return; }
-
-    const ObservationInterface *observation = Observation();
-    Units bases = observation->GetUnits(Unit::Self, IsTownHall());
-    Units barracks = observation->GetUnits(Unit::Self, IsUnits(barrack_types));
-    Units factories = observation->GetUnits(Unit::Self, IsUnits(factory_types));
-    Units starports = observation->GetUnits(Unit::Self, IsUnits(starport_types));
-    Units barracks_tech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB));
-    Units factoriesTech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB));
-    Units starports_tech = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORTTECHLAB));
-
-    Units supply_depots = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT));
-
-    // If we have less than three bases and we have a fusion core (which can build battlecruisers) then TRY to build another command center
-    if (bases.size() < 3 && CountUnitType(observation, UNIT_TYPEID::TERRAN_FUSIONCORE)) {
-        TryBuildExpansionCom(); // TODO IAN: look into this
-        return;
-    }
-
-    // Lower all supply depots (don't block movement)
-    // TODO IAN: Look into using supply depots for walling - kinda OP against rushes
-    for (const auto &supply_depot: supply_depots) {
-        Actions()->UnitCommand(supply_depot, ABILITY_ID::MORPH_SUPPLYDEPOT_LOWER);
-    }
-
-    if (!barracks.empty()) {
-        for (const auto &base: bases) {
-            if (base->unit_type == UNIT_TYPEID::TERRAN_COMMANDCENTER && observation->GetMinerals() > 150) {
-                Actions()->UnitCommand(base, ABILITY_ID::MORPH_ORBITALCOMMAND);
-            }
-        }
-    }
-
-    for (const auto &barrack: barracks) {
-        if (!barrack->orders.empty() || barrack->build_progress != 1) {
-            continue;
-        }
-        if (observation->GetUnit(barrack->add_on_tag) == nullptr) {
-            if (barracks_tech.size() < barracks.size() / 2 || barracks_tech.empty()) {
-                TryBuildAddOn(ABILITY_ID::BUILD_TECHLAB_BARRACKS, barrack->tag);
-            } else {
-                TryBuildAddOn(ABILITY_ID::BUILD_REACTOR_BARRACKS, barrack->tag);
-            }
-        }
-    }
-
-    for (const auto &factory: factories) {
-        if (!factory->orders.empty()) {
-            continue;
-        }
-
-        if (observation->GetUnit(factory->add_on_tag) == nullptr) {
-            if (CountUnitType(observation, UNIT_TYPEID::TERRAN_BARRACKSREACTOR) < 1) {
-                TryBuildAddOn(ABILITY_ID::BUILD_REACTOR_FACTORY, factory->tag);
-            } else {
-                TryBuildAddOn(ABILITY_ID::BUILD_TECHLAB_FACTORY, factory->tag);
-            }
-        }
-    }
-
-    for (const auto &starport: starports) {
-        if (!starport->orders.empty()) {
-            continue;
-        }
-        if (observation->GetUnit(starport->add_on_tag) == nullptr) {
-            if (CountUnitType(observation, UNIT_TYPEID::TERRAN_STARPORTREACTOR) < 1) {
-                TryBuildAddOn(ABILITY_ID::BUILD_REACTOR_STARPORT, starport->tag);
-            } else {
-                TryBuildAddOn(ABILITY_ID::BUILD_TECHLAB_STARPORT, starport->tag);
-            }
-        }
-    }
-
-    size_t barracks_count_target = std::min<size_t>(3 * bases.size(),
-                                                    8); // We want 3 barracks per base up to a max of 8
-    size_t armory_count_target = 1;
-    size_t starportCountTarget = std::min<size_t>(1 * bases.size(), 4);
-    size_t factoriesCountTarget = std::min<size_t>(2 * bases.size(), 7);
-
-    // Then starports
-    if (!factories.empty() && starports.size() < starportCountTarget) {
-        if (observation->GetMinerals() > 150 && observation->GetVespene() > 100) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_STARPORT, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-
-    // Then factories
-    if (!barracks.empty() && factories.size() < factoriesCountTarget) {
-        if (observation->GetMinerals() > 150 && observation->GetVespene() > 100) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_FACTORY, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-
-
-    // Barracks first
-    if (barracks.size() < barracks_count_target) {
-        if (observation->GetFoodWorkers() >= target_worker_count_) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-
-    if (CountUnitType(observation, UNIT_TYPEID::TERRAN_ENGINEERINGBAY) < 2) {
-        if (observation->GetMinerals() > 150 &&
-            observation->GetVespene() > 100) { // TODO IAN: don't need vespene to build this - why this limit
-            //    is this to "set a time" when we build?
-            TryBuildStructureRandom(ABILITY_ID::BUILD_ENGINEERINGBAY, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-    if (!barracks.empty() && CountUnitType(observation, UNIT_TYPEID::TERRAN_GHOSTACADEMY) < 1) {
-        if (observation->GetMinerals() > 150 && observation->GetVespene() > 50) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_GHOSTACADEMY, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-    if (!factories.empty() && CountUnitType(observation, UNIT_TYPEID::TERRAN_FUSIONCORE) < 1) {
-        if (observation->GetMinerals() > 150 && observation->GetVespene() > 150) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_FUSIONCORE, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-
-    if (!barracks.empty() && CountUnitType(observation, UNIT_TYPEID::TERRAN_ARMORY) < armory_count_target) {
-        if (observation->GetMinerals() > 150 && observation->GetVespene() > 100) {
-            TryBuildStructureRandom(ABILITY_ID::BUILD_ARMORY, UNIT_TYPEID::TERRAN_SCV);
-        }
-    }
-}
-
 bool ZergCrush::TryBuildAddOn(AbilityID ability_type_for_structure, Tag base_structure) {
-    float rx = GetRandomScalar();
-    float ry = GetRandomScalar();
     const Unit *unit = Observation()->GetUnit(base_structure);
-
+    if (unit == nullptr) {
+        return false;
+    }
     if (unit->build_progress != 1) {
         return false;
     }
-
-    Point2D build_location = Point2D(unit->pos.x + rx * 15, unit->pos.y + ry * 15);
-
-    Units units = Observation()->GetUnits(Unit::Self, IsStructure(Observation()));
-
-    if (Query()->Placement(ability_type_for_structure, unit->pos, unit)) {
+    if (unit->orders.empty()) {
         Actions()->UnitCommand(unit, ability_type_for_structure);
         return true;
     }
-
-    float distance = std::numeric_limits<float>::max();
-    for (const auto &u: units) {
-        float d = Distance2D(u->pos, build_location);
-        if (d < distance) {
-            distance = d;
-        }
-    }
-    if (distance < 6) {
-        return false;
-    }
-
-    if (Query()->Placement(ability_type_for_structure, build_location, unit)) {
-        Actions()->UnitCommand(unit, ability_type_for_structure, build_location);
-        return true;
-    }
     return false;
-
 }
 
 bool ZergCrush::TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type) {
@@ -692,7 +440,7 @@ void ZergCrush::ManageArmy() {
     }
 }
 
-float ZergCrush::GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) const {
+float ZergCrush::GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) {
     float distance = std::numeric_limits<float>::max();
     for (const auto &u: enemyUnit) {
         float d = Distance2D(u->pos, unit->pos);
@@ -746,7 +494,6 @@ void ZergCrush::OnStep() {
     const ObservationInterface *observation = Observation();
     Units units = observation->GetUnits(Unit::Self, IsArmy(observation));
     Units nukes = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_NUKE));
-    updateBuildOrder(observation);
 
     //Throttle some behavior that can wait to avoid duplicate orders.
     int frames_to_skip = observation->GetFoodUsed() >= observation->GetFoodCap() ? 6 : 4;
@@ -770,8 +517,7 @@ void ZergCrush::OnStep() {
         }
     }
 
-//    ManageMacro();
-    BuildOrderTest();
+    ManageMacro();
 
     ManageWorkers(UNIT_TYPEID::TERRAN_SCV, ABILITY_ID::HARVEST_GATHER, UNIT_TYPEID::TERRAN_REFINERY);
 
@@ -779,27 +525,8 @@ void ZergCrush::OnStep() {
 
     if (TryBuildSCV()) return;
 
-//    if (TryBuildSupplyDepot()) return;
-
     BuildArmy();
 
-//    if (BuildRefinery()) return;
-
-//    if (TryBuildExpansionCom()) return;
-}
-
-void ZergCrush::updateBuildOrder(const ObservationInterface *observation) {
-    Units structures = observation->GetUnits(Unit::Self, IsStructure(observation));
-    for (auto structure: structures) {
-        if (std::find_if(buildOrderTracking.begin(), buildOrderTracking.end(), [structure](auto built) {
-            return structure->tag == built.tag;
-        }) != buildOrderTracking.end()) {
-            continue; // This building has already been accounted for
-        }
-        if (structure->build_progress < 1.0f && structure->build_progress > 0.0f) {
-            buildOrderTracking.emplace_back(BuiltStructure(structure->tag, observation->GetGameLoop(), structure->unit_type));
-        }
-    }
 }
 
 void ZergCrush::OnUnitIdle(const Unit *unit) {
@@ -848,22 +575,39 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND,
+                                std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, std::optional(UNIT_TYPEID::TERRAN_BARRACKS)),
+            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR,
+                                std::optional(UNIT_TYPEID::TERRAN_BARRACKS)),
             BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, std::optional(UNIT_TYPEID::TERRAN_FACTORY)),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, std::optional(UNIT_TYPEID::TERRAN_STARPORT)),
-            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB,
+                                std::optional(UNIT_TYPEID::TERRAN_FACTORY)),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB,
+                                std::optional(UNIT_TYPEID::TERRAN_STARPORT)),
+            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND,
+                                std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
             BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
     };
-    tvtBuildOrder = BuildOrder(tvtStructures);
+
+    switch (enemyRace) {
+        case Terran:
+            buildOrder = BuildOrder(tvtStructures);
+            break;
+        case Zerg:
+            break;
+        case Protoss:
+            break;
+        case Random:
+            buildOrder = BuildOrder(tvtStructures);
+            break;
+    }
 }
 
 void ZergCrush::setEnemyRace(const ObservationInterface *observation) {
@@ -875,11 +619,11 @@ void ZergCrush::setEnemyRace(const ObservationInterface *observation) {
 
 void ZergCrush::OnUnitCreated(const sc2::Unit *unit) {
     auto observation = Observation();
-    if (unit->build_progress < 1.0 &&
+    if (unit->build_progress < 1.0 && unit->tag &&
         std::find_if(buildOrderTracking.begin(), buildOrderTracking.end(), [unit](auto built) {
             return unit->tag == built.tag;
         }) == buildOrderTracking.end()) {
         buildOrderTracking.emplace_back(BuiltStructure(unit->tag, observation->GetGameLoop(), unit->unit_type));
-        tvtBuildOrder.updateBuiltStructures(unit->unit_type);
+        buildOrder.updateBuiltStructures(unit->unit_type);
     }
 }

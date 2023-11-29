@@ -9,15 +9,20 @@
 class BuildOrderStructure {
 public:
     BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
-                        unsigned int workerCount,
+                        unsigned int supplyRequirement,
                         sc2::UnitTypeID structureType,
                         std::optional<sc2::UnitTypeID> baseStructureType = {})
-            : workerCount(workerCount), structureType(structureType), baseStructureType(baseStructureType) {
+            : supplyRequirement(supplyRequirement), structureType(structureType), baseStructureType(baseStructureType) {
         sc2::UnitTypeData data = observationInterface->GetUnitTypeData().at(this->structureType);
         mineralCost = data.mineral_cost;
         vespeneCost = data.vespene_cost;
         techRequirement = data.tech_requirement;
         abilityId = data.ability_id;
+        if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND == this->structureType) { // Orbital command takes into account cost of command center
+            sc2::UnitTypeData baseStructureData = observationInterface->GetUnitTypeData().at(this->baseStructureType.value());
+            mineralCost -= baseStructureData.mineral_cost;
+            vespeneCost -= baseStructureData.vespene_cost;
+        }
     }
 
     /**
@@ -26,7 +31,7 @@ public:
     bool canBuild(const sc2::ObservationInterface *observationInterface) {
         bool haveEnoughResources = observationInterface->GetMinerals() >= mineralCost &&
                                    observationInterface->GetVespene() >= vespeneCost;
-        bool haveRequiredWorkers = observationInterface->GetFoodWorkers() >= workerCount;
+        bool haveRequiredWorkers = observationInterface->GetFoodUsed() >= supplyRequirement;
         bool haveRequiredTech = true;
         if (techRequirement) {
             haveRequiredTech = !observationInterface->GetUnits(sc2::Unit::Alliance::Self,
@@ -52,34 +57,37 @@ public:
     /**
      * Finds the first compatible base structure if any and returns its tag
      */
-    std::optional<sc2::Tag> getBaseStruct(const sc2::ObservationInterface *observationInterface) const {
+    std::optional<sc2::Unit> getBaseStruct(const sc2::ObservationInterface *observationInterface) const {
         if (isAddOn()) {
-            auto possibleBaseStructs = observationInterface->GetUnits(sc2::Unit::Alliance::Self, sc2::IsUnit(baseStructureType.value()));
+            auto possibleBaseStructs = observationInterface->GetUnits(sc2::Unit::Alliance::Self,
+                                                                      sc2::IsUnit(baseStructureType.value()));
             // No compatible structures built
             if (possibleBaseStructs.empty()) {
                 return {};
             }
 
             // Find first structure of type that has no add-ons
-            auto baseStructIter = std::find_if(possibleBaseStructs.begin(), possibleBaseStructs.end(), [&observationInterface](const auto &structure) {
-                return observationInterface->GetUnit(structure->add_on_tag) == nullptr;
-            });
+            auto baseStructIter = std::find_if(possibleBaseStructs.begin(), possibleBaseStructs.end(),
+                                               [&observationInterface](const auto &structure) {
+                                                   return observationInterface->GetUnit(structure->add_on_tag) ==
+                                                          nullptr;
+                                               });
 
             // If there is no such structure then we can return none
             if (baseStructIter == possibleBaseStructs.end()) {
                 return {};
             }
 
-            return {(*baseStructIter)->tag};
+            return {**baseStructIter};
         }
         return {}; // This structure is not an add-on
     };
 
 private:
     /**
-     * Number of workers desired before building
+     * Supply needed before building
      */
-    unsigned int workerCount;
+    unsigned int supplyRequirement;
 
     /**
      * Unit type ID for the structure to build
@@ -122,18 +130,26 @@ public:
         auto structureIter = std::find_if(structures.begin(), structures.end(),
                                           [unitTypeId](auto &structure) {
                                               return !structure.built && structure.getUnitTypeID() == unitTypeId;
-        });
+                                          });
         if (structureIter == structures.end()) return;
         structureIter->built = true;
     }
 
-    std::optional<BuildOrderStructure*> nextStructureToBuild(const sc2::ObservationInterface *observationInterface) {
-        auto structureIter = std::find_if(structures.begin(), structures.end(),
-                                          [observationInterface](auto &structure) {
-                                              return structure.canBuild(observationInterface);
-                                          });
-        if (structureIter == structures.end()) return {};
-        return &(*structureIter);
+    std::vector<BuildOrderStructure *> structuresToBuild(const sc2::ObservationInterface *observationInterface) {
+        std::vector<BuildOrderStructure *> structuresToBuild;
+        auto i = structures.begin();
+        auto end = structures.end();
+        while (i != end) {
+            i = std::find_if(i, structures.end(),
+                             [observationInterface](auto &structure) {
+                                 return structure.canBuild(observationInterface);
+                             });
+            if (i != end) {
+                structuresToBuild.push_back(&(*i));
+                i++;
+            }
+        }
+        return structuresToBuild;
     }
 
 private:

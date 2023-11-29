@@ -270,19 +270,19 @@ public:
 
     bool TryBuildSupplyDepot();
 
-    void BuildArmy();
-
     bool TryBuildAddOn(AbilityID ability_type_for_structure, uint64_t base_structure);
 
     bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);
+
+    bool TryBuildExpansionCom();
+
+    void BuildArmy();
 
     void ManageMacro();
 
     void ManageUpgrades();
 
     void ManageArmy();
-
-    bool TryBuildExpansionCom();
 
     bool BuildRefinery();
 
@@ -297,12 +297,6 @@ public:
     void OnGameStart() final;
 
     void OnUnitCreated(const sc2::Unit* unit) final;
-
-    float GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) const;
-
-    bool TryBuildStructureBlocking(AbilityID ability_type_for_structure, const Unit& unit);
-
-    bool UnitTryBuildStructure(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
 private:
     std::vector<UNIT_TYPEID> barrack_types = { UNIT_TYPEID::TERRAN_BARRACKSFLYING, UNIT_TYPEID::TERRAN_BARRACKS };
@@ -322,21 +316,13 @@ private:
     bool bansheeCloakResearched = false;
 
     /**
-     * Reference to the first built SCV
-     */
-    const Unit* firstAdditionalSCV;
-
-    /**
      * Queried at the beginning of the game, represents the race that is played by the opposing player
      */
     Race enemyRace;
 
-    BuildOrder tvtBuildOrder;
-
+    BuildOrder buildOrder;
 
     std::vector<BuiltStructure> buildOrderTracking = {};
-
-    void updateBuildOrder(const ObservationInterface *observation);
 
     std::vector<UnitTypeID> buildOrderIds() {
         std::vector<UnitTypeID> ids = {};
@@ -346,9 +332,9 @@ private:
         return ids;
     }
 
-    void BuildOrderTest();
-
     void setEnemyRace(const ObservationInterface *observation);
+
+    static float GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) ;
 };
 
 }

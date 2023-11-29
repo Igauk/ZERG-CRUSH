@@ -18,7 +18,7 @@ public:
         vespeneCost = data.vespene_cost;
         techRequirement = data.tech_requirement;
         abilityId = data.ability_id;
-        if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND == this->structureType) { // Orbital command takes into account cost of command center
+        if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND ==this->structureType) { // Orbital command takes into account cost of command center
             sc2::UnitTypeData baseStructureData = observationInterface->GetUnitTypeData().at(this->baseStructureType.value());
             mineralCost -= baseStructureData.mineral_cost;
             vespeneCost -= baseStructureData.vespene_cost;
@@ -28,14 +28,14 @@ public:
     /**
      * Returns true if we have enough resources and the prerequisites for building this structure
      */
-    bool canBuild(const sc2::ObservationInterface *observationInterface) {
-        bool haveEnoughResources = observationInterface->GetMinerals() >= mineralCost &&
-                                   observationInterface->GetVespene() >= vespeneCost;
-        bool haveRequiredWorkers = observationInterface->GetFoodUsed() >= supplyRequirement;
+    bool canBuild(const sc2::ObservationInterface *observation) {
+        bool haveEnoughResources = observation->GetMinerals() >= mineralCost &&
+                                   observation->GetVespene() >= vespeneCost;
+        bool haveRequiredWorkers = observation->GetFoodUsed() >= supplyRequirement;
         bool haveRequiredTech = true;
         if (techRequirement) {
-            haveRequiredTech = !observationInterface->GetUnits(sc2::Unit::Alliance::Self,
-                                                               sc2::IsUnit(techRequirement)).empty();
+            haveRequiredTech = !observation->GetUnits(sc2::Unit::Alliance::Self,
+                                                      sc2::IsUnit(techRequirement)).empty();
         }
         return haveEnoughResources && haveRequiredWorkers && haveRequiredTech && !built;
     }
@@ -95,12 +95,12 @@ private:
     sc2::UnitTypeID structureType = sc2::UNIT_TYPEID::TERRAN_SUPPLYDEPOT;
 
     /**
-     *
+     * Amount of minerals required to build this structure
      */
     unsigned int mineralCost;
 
     /**
-     * Amount vespene gas required to build this structure
+     * Amount of vespene gas required to build this structure
      */
     unsigned int vespeneCost;
 
@@ -122,8 +122,6 @@ private:
 
 class BuildOrder {
 public:
-    BuildOrder() = default;
-
     explicit BuildOrder(std::vector<BuildOrderStructure> structures) : structures(std::move(structures)) {}
 
     void updateBuiltStructures(const sc2::UnitTypeID unitTypeId) {
@@ -135,15 +133,14 @@ public:
         structureIter->built = true;
     }
 
-    std::vector<BuildOrderStructure *> structuresToBuild(const sc2::ObservationInterface *observationInterface) {
+    std::vector<BuildOrderStructure *> structuresToBuild(const sc2::ObservationInterface* observation) {
         std::vector<BuildOrderStructure *> structuresToBuild;
         auto i = structures.begin();
         auto end = structures.end();
         while (i != end) {
-            i = std::find_if(i, structures.end(),
-                             [observationInterface](auto &structure) {
-                                 return structure.canBuild(observationInterface);
-                             });
+            i = std::find_if(i, structures.end(), [observation](auto &structure) {
+                return structure.canBuild(observation);
+            });
             if (i != end) {
                 structuresToBuild.push_back(&(*i));
                 i++;
@@ -152,8 +149,19 @@ public:
         return structuresToBuild;
     }
 
+    void OnUnitCreated(const sc2::Unit *unit) {
+        if (unit->build_progress < 1.0 && unit->tag &&
+            std::find_if(builtStructures.begin(), builtStructures.end(), [unit](auto built) {
+                return unit->tag == built;
+            }) == builtStructures.end()) {
+            builtStructures.push_back(unit->tag);
+            updateBuiltStructures(unit->unit_type);
+        }
+    }
+
 private:
     std::vector<BuildOrderStructure> structures;
+    std::vector<sc2::Tag> builtStructures;
 };
 
 #endif //BUILD_ORDER_H

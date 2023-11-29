@@ -320,17 +320,7 @@ private:
      */
     Race enemyRace;
 
-    BuildOrder buildOrder;
-
-    std::vector<BuiltStructure> buildOrderTracking = {};
-
-    std::vector<UnitTypeID> buildOrderIds() {
-        std::vector<UnitTypeID> ids = {};
-        for (auto structure: buildOrderTracking) {
-            ids.emplace_back(structure.id);
-        }
-        return ids;
-    }
+    BuildOrder* buildOrder;
 
     void setEnemyRace(const ObservationInterface *observation);
 

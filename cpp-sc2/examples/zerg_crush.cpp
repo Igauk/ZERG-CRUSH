@@ -122,8 +122,8 @@ void ZergCrush::BuildArmy() {
 
 void ZergCrush::ManageMacro() {
     auto observation = Observation();
-    auto structures = buildOrder.structuresToBuild(observation);
-    for(const auto &structure: structures) {
+    auto structures = buildOrder->structuresToBuild(observation);
+    for (const auto &structure: structures) {
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
                 // TODO: if not wall then TryBuildSupplyDepotWall()
@@ -557,7 +557,6 @@ void ZergCrush::OnUpgradeCompleted(UpgradeID upgrade) {
 }
 
 void ZergCrush::OnGameEnd() {
-    auto ids = buildOrderIds();
     std::cout << "Game Ended for: " << std::to_string(Control()->Proto().GetAssignedPort()) << std::endl;
 }
 
@@ -597,15 +596,14 @@ void ZergCrush::OnGameStart() {
     };
 
     switch (enemyRace) {
-        case Terran:
-            buildOrder = BuildOrder(tvtStructures);
+        case Random:
+        case Terran: {
+            buildOrder = new BuildOrder(tvtStructures);
             break;
+        }
         case Zerg:
             break;
         case Protoss:
-            break;
-        case Random:
-            buildOrder = BuildOrder(tvtStructures);
             break;
     }
 }
@@ -618,12 +616,5 @@ void ZergCrush::setEnemyRace(const ObservationInterface *observation) {
 }
 
 void ZergCrush::OnUnitCreated(const sc2::Unit *unit) {
-    auto observation = Observation();
-    if (unit->build_progress < 1.0 && unit->tag &&
-        std::find_if(buildOrderTracking.begin(), buildOrderTracking.end(), [unit](auto built) {
-            return unit->tag == built.tag;
-        }) == buildOrderTracking.end()) {
-        buildOrderTracking.emplace_back(BuiltStructure(unit->tag, observation->GetGameLoop(), unit->unit_type));
-        buildOrder.updateBuiltStructures(unit->unit_type);
-    }
+    buildOrder->OnUnitCreated(unit);
 }

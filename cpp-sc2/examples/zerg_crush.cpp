@@ -71,7 +71,7 @@ bool ZergCrush::TryBuildSupplyDepot() {
     }
 
     //check to see if there is already one building
-    Units units = observation->GetUnits(Unit::Alliance::Self, IsUnits(supply_depot_types));
+    Units units = observation->GetUnits(Unit::Alliance::Self, IsUnits(supplyDepotTypes));
     if (observation->GetFoodUsed() < 40) { // TODO IAN: Same comment as above, may only want to check optionally
         //    not the responsibility of this function
         for (const auto &unit: units) {
@@ -90,31 +90,14 @@ bool ZergCrush::TryBuildSupplyDepot() {
 
 void ZergCrush::BuildArmy() {
     const ObservationInterface *observation = Observation();
-    // Grab army and building counts
-    Units barracks = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_BARRACKS));
-    Units factories = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_FACTORY));
-    Units starports = observation->GetUnits(Unit::Alliance::Self, IsUnit(UNIT_TYPEID::TERRAN_STARPORT));
+    auto unitsToBuild = armyComposition->unitsToBuild(observation);
+    for (const auto &unit: unitsToBuild) {
+        // Grab army and building counts
+        Units buildings = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit->getBuildingStructureType()));
 
-    if (!starports.empty()) {
-        for (const auto &starport: starports) {
-            if (starport->orders.empty()) {
-                Actions()->UnitCommand(starport, ABILITY_ID::TRAIN_MEDIVAC);
-            }
-        }
-    }
-
-    if (!barracks.empty()) {
-        for (const auto &barrack: barracks) {
-            if (barrack->orders.empty()) {
-                Actions()->UnitCommand(barrack, ABILITY_ID::TRAIN_MARINE);
-            }
-        }
-    }
-
-    if (!factories.empty()) {
-        for (const auto &factory: factories) {
-            if (factory->orders.empty()) {
-                Actions()->UnitCommand(factory, ABILITY_ID::TRAIN_HELLION);
+        for (const auto &building: buildings) {
+            if (building->orders.empty()) {
+                Actions()->UnitCommand(building, unit->getAbilityId());
             }
         }
     }
@@ -207,14 +190,12 @@ void ZergCrush::ManageUpgrades() {
         for (const auto &upgrade: upgrades) {
             if (CountUnitType(observation, UNIT_TYPEID::TERRAN_ARMORY) > 0) {
                 if (upgrade == UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL1 && base_count > 2) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS,
-                                 UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
                 } else if (upgrade == UPGRADE_ID::TERRANINFANTRYARMORSLEVEL1 && base_count > 2) {
                     TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
                 }
                 if (upgrade == UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL2 && base_count > 4) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS,
-                                 UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
                 } else if (upgrade == UPGRADE_ID::TERRANINFANTRYARMORSLEVEL2 && base_count > 4) {
                     TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
                 }
@@ -343,7 +324,7 @@ void ZergCrush::ManageArmy() {
                     break;
                 }
                 case UNIT_TYPEID::TERRAN_MEDIVAC: {
-                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bio_types));
+                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bioUnitTypes));
                     if (unit->orders.empty()) {
                         for (const auto &bio_unit: bio_units) {
                             if (bio_unit->health < bio_unit->health_max) {
@@ -426,7 +407,7 @@ void ZergCrush::ManageArmy() {
                     break;
                 }
                 case UNIT_TYPEID::TERRAN_MEDIVAC: {
-                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bio_types));
+                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bioUnitTypes));
                     if (unit->orders.empty()) {
                         Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, bio_units.front()->pos);
                     }
@@ -566,9 +547,6 @@ void ZergCrush::OnGameStart() {
     auto observation = Observation();
     setEnemyRace(observation);
 
-    /**
-     * Sets build order for TvT match-ups
-     */
     std::vector<BuildOrderStructure> tvtStructures = {
             BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS),
@@ -595,15 +573,31 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
     };
 
+    std::vector<ArmyUnit> tvtArmyComposition = {
+            ArmyUnit(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
+            }),
+            ArmyUnit(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_REACTOR), 1, 10},
+            }),
+            ArmyUnit(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
+            }),
+            ArmyUnit(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 3},
+            }),
+    };
+
     switch (enemyRace) {
         case Random:
         case Terran: {
             buildOrder = new BuildOrder(tvtStructures);
+            armyComposition = new ArmyComposition(tvtArmyComposition);
             break;
         }
         case Zerg:
-            break;
         case Protoss:
+            break;
             break;
     }
 }
@@ -615,6 +609,11 @@ void ZergCrush::setEnemyRace(const ObservationInterface *observation) {
     })->race_actual;
 }
 
+void ZergCrush::OnUnitEnterVision(const sc2::Unit *) {
+    armyComposition->setDesiredUnitCounts(Observation());
+}
+
 void ZergCrush::OnUnitCreated(const sc2::Unit *unit) {
     buildOrder->OnUnitCreated(unit);
+    armyComposition->setDesiredUnitCounts(Observation());
 }

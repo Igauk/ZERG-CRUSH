@@ -31,13 +31,13 @@ public:
     bool canBuild(const sc2::ObservationInterface *observation) {
         bool haveEnoughResources = observation->GetMinerals() >= mineralCost &&
                                    observation->GetVespene() >= vespeneCost;
-        bool haveRequiredWorkers = observation->GetFoodUsed() >= supplyRequirement;
+        bool atSupply = observation->GetFoodUsed() >= supplyRequirement;
         bool haveRequiredTech = true;
         if (techRequirement) {
             haveRequiredTech = !observation->GetUnits(sc2::Unit::Alliance::Self,
                                                       sc2::IsUnit(techRequirement)).empty();
         }
-        return haveEnoughResources && haveRequiredWorkers && haveRequiredTech && !built;
+        return haveEnoughResources && atSupply && haveRequiredTech && !built;
     }
 
     /**
@@ -92,7 +92,7 @@ private:
     /**
      * Unit type ID for the structure to build
      */
-    sc2::UnitTypeID structureType = sc2::UNIT_TYPEID::TERRAN_SUPPLYDEPOT;
+    sc2::UnitTypeID structureType;
 
     /**
      * Amount of minerals required to build this structure

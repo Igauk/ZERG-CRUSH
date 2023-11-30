@@ -96,7 +96,12 @@ void ZergCrush::BuildArmy() {
         Units buildings = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit->getBuildingStructureType()));
 
         for (const auto &building: buildings) {
-            if (building->orders.empty()) {
+            auto addOn = observation->GetUnit(building->add_on_tag);
+            uint32_t numOrders = 1;
+            if (addOn && std::find(reactorTypes.begin(), reactorTypes.end(), addOn->unit_type) != reactorTypes.end()) {
+                numOrders++; // If we have a reactor build two at a time
+            }
+            if (building->orders.size() < numOrders) {
                 Actions()->UnitCommand(building, unit->getAbilityId());
             }
         }
@@ -578,7 +583,7 @@ void ZergCrush::OnGameStart() {
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
             }),
             ArmyUnit(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_REACTOR), 1, 10},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 10},
             }),
             ArmyUnit(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},

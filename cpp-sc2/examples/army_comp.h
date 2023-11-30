@@ -150,7 +150,7 @@ public:
     }
 
 private:
-    std::vector<ArmyUnit> units;
+    std::vector<ArmyUnit> units = {};
 
 };
 

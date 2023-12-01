@@ -496,17 +496,17 @@ bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
     if (piece == UNIT_TYPEID::TERRAN_BARRACKS) {
         //check if its the first or second barrack
         if (Query()->Placement(ABILITY_ID::BUILD_BARRACKS, map_postions[2][index])) {
-            std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
+            //std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
             return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[2][closest_ramp]);
         }
         else {
-            std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
+            //std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
             return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[1][closest_ramp]);
         }
     }
     //supply depot
     else {
-        std::cout << "building depot " << map_postions[1][index].x << std::endl;
+        //std::cout << "building depot " << map_postions[1][index].x << std::endl;
         return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SCV, map_postions[0][closest_ramp]);
         }
 

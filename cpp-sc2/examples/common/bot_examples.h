@@ -5,6 +5,8 @@
 #include "sc2api/sc2_map_info.h"
 #include "../build_order.h"
 #include "../army_comp.h"
+#include "../filters.h"
+#include "../attack.h"
 
 namespace sc2 {
 
@@ -81,13 +83,13 @@ public:
 
     void AttackWithUnitType(UnitTypeID unit_type, const ObservationInterface* observation);
 
-    void ScoutWithUnits(UnitTypeID unit_type, const ObservationInterface* observation);
+    virtual void ScoutWithUnits(UnitTypeID unit_type, const ObservationInterface* observation);
 
     void RetreatWithUnits(UnitTypeID unit_type, Point2D retreat_position);
 
     void AttackWithUnit(const Unit* unit, const ObservationInterface* observation);
 
-    void ScoutWithUnit(const Unit* unit, const ObservationInterface* observation);
+    virtual void ScoutWithUnit(const Unit* unit, const ObservationInterface* observation);
 
     void RetreatWithUnit(const Unit* unit, Point2D retreat_position);
 
@@ -275,8 +277,6 @@ public:
 
     bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);
 
-    bool TryBuildExpansionCom();
-
     void BuildArmy();
 
     void ManageMacro();
@@ -291,13 +291,19 @@ public:
 
     void OnUnitIdle(const Unit* unit) override;
 
-    void OnUpgradeCompleted(UpgradeID upgrade) override;
-
     void OnGameEnd() final;
 
     void OnGameStart() final;
 
     void OnUnitCreated(const sc2::Unit* unit) final;
+
+    void OnUnitDestroyed(const Unit *) final;
+
+    void OnUnitEnterVision(const Unit *) final;
+
+    void OnBuildingConstructionComplete(const Unit *unit) final;
+
+    void OnUpgradeCompleted(UpgradeID upgradeId) final;
 
 private:
     std::vector<UNIT_TYPEID> supplyDepotTypes = {UNIT_TYPEID::TERRAN_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED };
@@ -316,12 +322,17 @@ private:
 
     BuildOrder* buildOrder;
     ArmyComposition* armyComposition;
+    ZergCrushMicro* attackMicro;
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    static float GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) ;
+    void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
 
-    void OnUnitEnterVision(const Unit *);
+    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+
+    static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
+
+    bool TryBuildStructureRandomWithUnit(AbilityID abilityTypeForStructure, const Unit *unit);
 };
 
 }

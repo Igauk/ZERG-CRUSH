@@ -271,6 +271,8 @@ public:
 
     bool TryBuildSupplyDepot();
 
+    bool TryBuildWallPiece(UnitTypeID piece);
+
     bool TryBuildAddOn(AbilityID ability_type_for_structure, uint64_t base_structure);
 
     bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);

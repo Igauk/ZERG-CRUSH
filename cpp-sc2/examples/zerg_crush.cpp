@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <iostream>
 
 #include "sc2api/sc2_unit_filters.h"
 #include "sc2lib/sc2_lib.h"
@@ -112,10 +113,18 @@ void ZergCrush::ManageMacro() {
     auto observation = Observation();
     auto structures = buildOrder->structuresToBuild(observation);
     for (const auto &structure: structures) {
+        std::cout << structure->getUnitTypeID() << std::endl;
+        std::cout << structure->part_of_wall << std::endl;
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
                 // TODO: if not wall then TryBuildSupplyDepotWall()
-                TryBuildSupplyDepot();
+                if(structure->part_of_wall) {
+                    //std::cout << "wall depot" << std::endl;
+                    TryBuildWallPiece(UNIT_TYPEID::TERRAN_SUPPLYDEPOT);
+                }
+                else {
+                    TryBuildSupplyDepot();  
+                }
                 break;
             case UNIT_TYPEID::TERRAN_REFINERY:
                 BuildRefinery();
@@ -139,6 +148,12 @@ void ZergCrush::ManageMacro() {
                     if (baseStruct.has_value()) {
                         structure->built = TryBuildAddOn(structure->getAbilityId(), baseStruct.value().tag);
                     }
+                    break;
+                }
+                //barracks in the wall
+                if(structure->getUnitTypeID() == UNIT_TYPEID::TERRAN_BARRACKS && structure->part_of_wall) {
+                    //std::cout << "wall barrack" << std::endl;
+                    TryBuildWallPiece(UNIT_TYPEID::TERRAN_BARRACKS);
                     break;
                 }
                 TryBuildStructureRandom(structure->getAbilityId(), UNIT_TYPEID::TERRAN_SCV);
@@ -437,6 +452,66 @@ float ZergCrush::GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const
     return distance;
 }
 
+bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
+    const ObservationInterface *observation = Observation();
+    Positions pos;
+    std::array<std::vector<sc2::Point2D>, 4> map_postions;
+    
+    
+    //get the postions of the map we are on
+    switch(pos.getMap(observation)) {
+        case Maps::CACTUS:
+            map_postions = pos.cactus_postions;
+            break;
+        case Maps::BELSHIR:
+            map_postions = pos.belshir_postions;
+            break;
+        case Maps::PROXIMA:
+            map_postions = pos.proxima_postions;
+            break;
+        default:
+            break;
+    }
+    
+
+    //figure out which ramp we are closest to
+    int closest_ramp = 0;   
+    int index = 1;
+
+    sc2::Point2D startLocation = startLocation_;
+    float closest_distance = DistanceSquared2D(startLocation, map_postions[0][0]);
+    //the most scuffed for loop ever
+    for (const auto& pos : map_postions) {
+        float test_distance = DistanceSquared2D(startLocation, pos[index]);
+        if(test_distance < closest_distance) 
+        {closest_ramp = index; closest_distance = test_distance;}
+        ++index;
+
+    }
+
+    //set the build location based on structure type/current wall progress
+    //supply depot = map_postions[0]
+    //barrack 1 = map_postions[1]
+    //barrack 2 = map_postions[2]
+    if (piece == UNIT_TYPEID::TERRAN_BARRACKS) {
+        //check if its the first or second barrack
+        if (Query()->Placement(ABILITY_ID::BUILD_BARRACKS, map_postions[2][index])) {
+            std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
+            return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[2][closest_ramp]);
+        }
+        else {
+            std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
+            return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[1][closest_ramp]);
+        }
+    }
+    //supply depot
+    else {
+        std::cout << "building depot " << map_postions[1][index].x << std::endl;
+        return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SCV, map_postions[0][closest_ramp]);
+        }
+
+}
+
 bool ZergCrush::TryBuildExpansionCom() {
     const ObservationInterface *observation = Observation();
     Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
@@ -548,14 +623,18 @@ void ZergCrush::OnGameEnd() {
 
 void ZergCrush::OnGameStart() {
     MultiplayerBot::OnGameStart();
-
+    //std::cout << "1" << std::endl;
     auto observation = Observation();
+
+    //THIS IS RETURNING GARBAGE VALUE
     setEnemyRace(observation);
 
     std::vector<BuildOrderStructure> tvtStructures = {
-            BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
+        
+            BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {}, true),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
+            //BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND,
                                 std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
@@ -593,18 +672,26 @@ void ZergCrush::OnGameStart() {
             }),
     };
 
+    buildOrder = new BuildOrder(tvtStructures);
+    armyComposition = new ArmyComposition(tvtArmyComposition);
+    /*
+    std::cout << enemyRace << std::endl;
     switch (enemyRace) {
         case Random:
-        case Terran: {
+        case Terran: 
+            std::cout << "3" << std::endl;
             buildOrder = new BuildOrder(tvtStructures);
             armyComposition = new ArmyComposition(tvtArmyComposition);
             break;
-        }
+        
         case Zerg:
         case Protoss:
             break;
             break;
+        default:
+            std::cout << "4" << std::endl;
     }
+    */
 }
 
 void ZergCrush::setEnemyRace(const ObservationInterface *observation) {

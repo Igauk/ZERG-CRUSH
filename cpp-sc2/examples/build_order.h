@@ -2,17 +2,42 @@
 #define BUILD_ORDER_H
 
 #include <utility>
+#include <optional>
+#include <iostream>
+#include <string>
 
 #include "sc2api/sc2_unit_filters.h"
+#include "positions.h"
+/*
+std::array<std::vector<sc2::Point2D>, 4> cactus_positions = {
+    BARRACKS_POSITIONS1_CACTUS,
+    BARRACKS_POSITIONS2_CACTUS,
+    SUPPLY_DEPOT_POSITIONS_CACTUS,
+    TURRET_POSITIONS_CACTUS
+};
 
+std::array<std::vector<sc2::Point2D>, 4> belshir_positions = {
+    BARRACKS_POSITIONS1_BELSHIR,
+    BARRACKS_POSITIONS2_BELSHIR,
+    SUPPLY_DEPOT_POSITIONS_BELSHIR,
+    TURRET_POSITIONS_BELSHIR
+};
+
+std::array<std::vector<sc2::Point2D>, 4> proxima_positions = {
+    BARRACKS_POSITIONS1_PROXIMA,
+    BARRACKS_POSITIONS2_PROXIMA,
+    SUPPLY_DEPOT_POSITIONS_PROXIMA,
+    TURRET_POSITIONS_PROXIMA
+};
+*/
 
 class BuildOrderStructure {
 public:
     BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
                         unsigned int supplyRequirement,
                         sc2::UnitTypeID structureType,
-                        std::optional<sc2::UnitTypeID> baseStructureType = {})
-            : supplyRequirement(supplyRequirement), structureType(structureType), baseStructureType(baseStructureType) {
+                        std::optional<sc2::UnitTypeID> baseStructureType = {}, bool part_of_wall = false)
+            : supplyRequirement(supplyRequirement), structureType(structureType), baseStructureType(baseStructureType), part_of_wall(part_of_wall) {
         sc2::UnitTypeData data = observationInterface->GetUnitTypeData().at(this->structureType);
         mineralCost = data.mineral_cost;
         vespeneCost = data.vespene_cost;
@@ -24,7 +49,7 @@ public:
             vespeneCost -= baseStructureData.vespene_cost;
         }
     }
-
+    
     /**
      * Returns true if we have enough resources and the prerequisites for building this structure
      */
@@ -44,6 +69,11 @@ public:
      * Toggle representing whether or not this structure has been built
      */
     bool built = false;
+    /**
+     * If the struct is part of a wall, we will build it at a specific location
+     * potentially make this variable extended to any struc
+     */
+    bool part_of_wall;
 
     sc2::UnitTypeID getUnitTypeID() const { return structureType; };
 
@@ -84,6 +114,7 @@ public:
     };
 
 private:
+  
     /**
      * Supply needed before building
      */
@@ -119,6 +150,7 @@ private:
      */
     std::optional<sc2::UnitTypeID> baseStructureType;
 };
+
 
 class BuildOrder {
 public:

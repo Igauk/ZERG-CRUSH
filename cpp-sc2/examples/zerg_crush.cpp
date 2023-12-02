@@ -7,6 +7,7 @@
 #include "sc2api/sc2_unit_filters.h"
 #include "sc2lib/sc2_lib.h"
 #include "common/bot_examples.h"
+#include "ray_cast.h"
 
 #include <string>
 #include <optional>
@@ -113,14 +114,18 @@ void ZergCrush::ManageMacro() {
     auto observation = Observation();
     auto structures = buildOrder->structuresToBuild(observation);
     for (const auto &structure: structures) {
-        std::cout << structure->getUnitTypeID() << std::endl;
-        std::cout << structure->part_of_wall << std::endl;
+        //std::cout << structure->getUnitTypeID() << std::endl;
+        //std::cout << structure->part_of_wall << std::endl;
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
                 // TODO: if not wall then TryBuildSupplyDepotWall()
                 if(structure->part_of_wall) {
                     //std::cout << "wall depot" << std::endl;
                     TryBuildWallPiece(UNIT_TYPEID::TERRAN_SUPPLYDEPOT);
+
+                    //TODO LUCAS: MAKE SURE DEPOTS ARE LOWERED AT THE START
+                    //ONLY RAISED DEFENSIVELY
+
                 }
                 else {
                     TryBuildSupplyDepot();  
@@ -434,6 +439,7 @@ void ZergCrush::ManageArmy() {
                     break;
                 }
                 default:
+                    RayCastWithUnit(unit, *observation);
                     ScoutWithUnit(unit, observation);
                     break;
             }
@@ -450,6 +456,16 @@ float ZergCrush::GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const
         }
     }
     return distance;
+}
+
+void ZergCrush::RayCastWithUnit(const Unit* unit, const ObservationInterface &observation) {
+    Point2D current_pos = unit->pos;
+    RayCastInstance cast(unit);
+
+    if (cast.castWithUnit(unit, observation)) {
+        std::cout << "NO WAY" << std::endl;
+    }
+    
 }
 
 bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {

@@ -279,6 +279,8 @@ public:
 
     bool TryBuildExpansionCom();
 
+    void RayCastWithUnit(const Unit* unit, const ObservationInterface &observation);
+
     void BuildArmy();
 
     void ManageMacro();

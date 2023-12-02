@@ -3,10 +3,6 @@
 #include "sc2api/sc2_interfaces.h"
 #include "sc2api/sc2_agent.h"
 #include "sc2api/sc2_map_info.h"
-#include "../build_order.h"
-#include "../army_comp.h"
-#include "../filters.h"
-#include "../attack.h"
 
 namespace sc2 {
 
@@ -257,82 +253,6 @@ private:
     bool stim_researched_ = false;
     bool ghost_cloak_researched_ = true;
     bool banshee_cloak_researched_ = true;
-};
-
-struct BuiltStructure {
-    Tag tag;
-    uint32_t builtFrame;
-    UNIT_TYPEID id;
-
-    BuiltStructure(Tag tag, uint32_t builtFrame, UNIT_TYPEID id) : tag(tag), builtFrame(builtFrame), id(id) {}
-};
-
-class ZergCrush : public MultiplayerBot {
-public:
-    bool TryBuildSCV();
-
-    bool TryBuildSupplyDepot();
-
-    bool TryBuildAddOn(AbilityID ability_type_for_structure, uint64_t base_structure);
-
-    bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);
-
-    void BuildArmy();
-
-    void ManageMacro();
-
-    void ManageUpgrades();
-
-    void ManageArmy();
-
-    bool BuildRefinery();
-
-    void OnStep() final;
-
-    void OnUnitIdle(const Unit* unit) override;
-
-    void OnGameEnd() final;
-
-    void OnGameStart() final;
-
-    void OnUnitCreated(const sc2::Unit* unit) final;
-
-    void OnUnitDestroyed(const Unit *) final;
-
-    void OnUnitEnterVision(const Unit *) final;
-
-    void OnBuildingConstructionComplete(const Unit *unit) final;
-
-    void OnUpgradeCompleted(UpgradeID upgradeId) final;
-
-private:
-    std::vector<UNIT_TYPEID> supplyDepotTypes = {UNIT_TYPEID::TERRAN_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED };
-    std::vector<UNIT_TYPEID> bioUnitTypes = {UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_GHOST, UNIT_TYPEID::TERRAN_REAPER };
-    std::vector<UNIT_TYPEID> reactorTypes = {UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_FACTORYREACTOR};
-
-    bool nukeBuilt = false;
-    bool stimResearched = false;
-    bool ghostCloakResearched = false;
-    bool bansheeCloakResearched = false;
-
-    /**
-     * Queried at the beginning of the game, represents the race that is played by the opposing player
-     */
-    Race enemyRace;
-
-    BuildOrder* buildOrder;
-    ArmyComposition* armyComposition;
-    ZergCrushMicro* attackMicro;
-
-    void setEnemyRace(const ObservationInterface *observation);
-
-    void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
-
-    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
-
-    static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
-
-    bool TryBuildStructureRandomWithUnit(AbilityID abilityTypeForStructure, const Unit *unit);
 };
 
 }

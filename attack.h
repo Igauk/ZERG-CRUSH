@@ -2,6 +2,8 @@
 #define ATTACK_H
 
 
+#include "filters.h"
+
 struct MicroInformation {
     MicroInformation(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         auto data = observation->GetUnitTypeData().at(unit->unit_type);

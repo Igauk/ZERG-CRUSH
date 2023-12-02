@@ -1,0 +1,16 @@
+// tasks.json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build BasicSc2Bot",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "${workspaceFolder}/build", "--target", "BasicSc2Bot", "--config", "Debug"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

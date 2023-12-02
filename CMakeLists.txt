@@ -20,7 +20,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_BINARY_DIR}/bin)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 
 # Allow creating filters for projects in visual studio.
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -62,7 +62,7 @@ include_directories(SYSTEM
 )
 
 # Create the executable.
-add_executable(BasicSc2Bot ${SOURCES_BASICSC2BOT} cpp-sc2/examples/zerg_crush.cpp)
+add_executable(BasicSc2Bot ${SOURCES_BASICSC2BOT} zerg_crush.cpp)
 target_link_libraries(BasicSc2Bot
     sc2api sc2lib sc2utils
 )

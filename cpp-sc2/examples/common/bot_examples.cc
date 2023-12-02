@@ -287,14 +287,11 @@ void MultiplayerBot::ScoutWithUnit(const Unit* unit, const ObservationInterface*
 
 //Try build structure given a location. This is used most of the time
 bool MultiplayerBot::TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false) {
-
     const ObservationInterface* observation = Observation();
     Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit_type));
 
     //if we have no workers Don't build
-    if (workers.empty()) {
-        return false;
-    }
+    if (workers.empty()) return false;
 
     // Check to see if there is already a worker heading out to build it
     for (const auto& worker : workers) {

@@ -2,34 +2,8 @@
 #define BUILD_ORDER_H
 
 #include <utility>
-#include <optional>
-#include <iostream>
-#include <string>
 
 #include "sc2api/sc2_unit_filters.h"
-#include "positions.h"
-/*
-std::array<std::vector<sc2::Point2D>, 4> cactus_positions = {
-    BARRACKS_POSITIONS1_CACTUS,
-    BARRACKS_POSITIONS2_CACTUS,
-    SUPPLY_DEPOT_POSITIONS_CACTUS,
-    TURRET_POSITIONS_CACTUS
-};
-
-std::array<std::vector<sc2::Point2D>, 4> belshir_positions = {
-    BARRACKS_POSITIONS1_BELSHIR,
-    BARRACKS_POSITIONS2_BELSHIR,
-    SUPPLY_DEPOT_POSITIONS_BELSHIR,
-    TURRET_POSITIONS_BELSHIR
-};
-
-std::array<std::vector<sc2::Point2D>, 4> proxima_positions = {
-    BARRACKS_POSITIONS1_PROXIMA,
-    BARRACKS_POSITIONS2_PROXIMA,
-    SUPPLY_DEPOT_POSITIONS_PROXIMA,
-    TURRET_POSITIONS_PROXIMA
-};
-*/
 
 class BuildOrderStructure {
 public:
@@ -43,13 +17,30 @@ public:
         vespeneCost = data.vespene_cost;
         techRequirement = data.tech_requirement;
         abilityId = data.ability_id;
-        if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND ==this->structureType) { // Orbital command takes into account cost of command center
-            sc2::UnitTypeData baseStructureData = observationInterface->GetUnitTypeData().at(this->baseStructureType.value());
+    }
+
+    BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
+                        sc2::UnitTypeID structureType,
+                        bool chainBuild=false)
+            : BuildOrderStructure(observationInterface, 0, structureType, chainBuild) {
+    }
+
+    BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
+                        unsigned int supplyRequirement,
+                        sc2::UnitTypeID structureType,
+                        sc2::UnitTypeID baseStructureType)
+            : BuildOrderStructure(observationInterface, supplyRequirement, structureType) {
+        this->baseStructureType = new sc2::UnitTypeID(baseStructureType);
+        // Orbital command takes into account cost of command center
+        if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND == this->structureType) {
+            sc2::UnitTypeData baseStructureData = observationInterface->GetUnitTypeData().at(
+                    *(this->baseStructureType));
             mineralCost -= baseStructureData.mineral_cost;
             vespeneCost -= baseStructureData.vespene_cost;
         }
     }
-    
+
+
     /**
      * Returns true if we have enough resources and the prerequisites for building this structure
      */
@@ -105,16 +96,59 @@ public:
 
             // If there is no such structure then we can return none
             if (baseStructIter == possibleBaseStructs.end()) {
-                return {};
+                return nullptr;
             }
 
-            return {**baseStructIter};
+            return *baseStructIter;
         }
-        return {}; // This structure is not an add-on
+        return nullptr; // This structure is not an add-on
     };
 
+    bool built() const { return getTag() != 0 || builtAddOn; }
+
+    void setBuiltAddOn(bool builtAddOn) {
+        BuildOrderStructure::builtAddOn = builtAddOn;
+    }
+
+    sc2::UnitTypeID getUnitTypeID() const { return structureType; };
+
+    /**
+    * Returns what ability creates this structure
+    */
+    sc2::AbilityID getAbilityId() const { return abilityId; }
+
+    bool isAddOn() const { return baseStructureType != nullptr; };
+
+
+    sc2::Tag getTag() const {
+        return tag;
+    }
+
+    void setTag(sc2::Tag tag) {
+        BuildOrderStructure::tag = tag;
+    }
+
+    sc2::Tag getBuiltBy() const {
+        return builtBy;
+    }
+
+    void setBuiltBy(sc2::Tag builtBy) {
+        BuildOrderStructure::builtBy = builtBy;
+    }
+
+    bool isChainBuild() const {
+        return chainBuild && !supplyRequirement;
+    }
+
+    bool isChainBuildLeader() const {
+        return chainBuild && supplyRequirement;
+    }
+
+    void setSupplyRequirement(unsigned int supplyRequirement) {
+        BuildOrderStructure::supplyRequirement = supplyRequirement;
+    }
+
 private:
-  
     /**
      * Supply needed before building
      */
@@ -148,24 +182,34 @@ private:
     /**
      * Used in the case of an add-on structure
      */
-    std::optional<sc2::UnitTypeID> baseStructureType;
-};
+    sc2::UnitTypeID *baseStructureType = nullptr;
 
+    sc2::Tag tag = 0;
+
+    sc2::Tag builtBy = 0;
+
+    /**
+     * To be built by unit that built previous building
+     */
+    bool chainBuild = false;
+
+    bool builtAddOn = false;
+};
 
 class BuildOrder {
 public:
     explicit BuildOrder(std::vector<BuildOrderStructure> structures) : structures(std::move(structures)) {}
 
-    void updateBuiltStructures(const sc2::UnitTypeID unitTypeId) {
-        auto structureIter = std::find_if(structures.begin(), structures.end(),
-                                          [unitTypeId](auto &structure) {
-                                              return !structure.built && structure.getUnitTypeID() == unitTypeId;
-                                          });
-        if (structureIter == structures.end()) return;
-        structureIter->built = true;
+    void chainBuild(sc2::Tag chainBuilder) {
+        auto buildingIter = std::find_if(structures.begin(), structures.end(), [](const auto& building) {
+            return building.isChainBuild() && !building.built();
+        });
+        if (buildingIter != structures.end()) {
+            buildingIter->setBuiltBy(chainBuilder);
+        }
     }
 
-    std::vector<BuildOrderStructure *> structuresToBuild(const sc2::ObservationInterface* observation) {
+    std::vector<BuildOrderStructure *> structuresToBuild(const sc2::ObservationInterface *observation) {
         std::vector<BuildOrderStructure *> structuresToBuild;
         auto i = structures.begin();
         auto end = structures.end();
@@ -181,19 +225,62 @@ public:
         return structuresToBuild;
     }
 
-    void OnUnitCreated(const sc2::Unit *unit) {
+    void updateBuiltStructures(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        auto unitTypeId = unit->unit_type;
+        auto structureIter = std::find_if(structures.begin(), structures.end(),
+                                          [unitTypeId](auto &structure) {
+                                              return !structure.built() && structure.getUnitTypeID() == unitTypeId;
+                                          });
+        if (structureIter == structures.end()) return;
+
+        sc2::AbilityID abilityId = structureIter->getAbilityId();
+        sc2::Tag tag = unit->tag;
+        auto workers = observation->GetUnits(sc2::Unit::Self, sc2::IsUnit(sc2::UNIT_TYPEID::TERRAN_SCV));
+        auto assignedWorkerIter = std::find_if(workers.begin(), workers.end(), [abilityId, tag](const auto &worker) {
+            return std::find_if(worker->orders.begin(), worker->orders.end(), [&](const auto &order) {
+                return order.ability_id == abilityId;
+            }) != worker->orders.end();
+        });
+        if (assignedWorkerIter != workers.end()) {
+            structureIter->setBuiltBy((*assignedWorkerIter)->tag);
+        }
+        structureIter->setTag(tag);
+    }
+
+    void OnUnitCreated(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         if (unit->build_progress < 1.0 && unit->tag &&
-            std::find_if(builtStructures.begin(), builtStructures.end(), [unit](auto built) {
-                return unit->tag == built;
-            }) == builtStructures.end()) {
-            builtStructures.push_back(unit->tag);
-            updateBuiltStructures(unit->unit_type);
+            std::find_if(structures.begin(), structures.end(), [unit](auto building) {
+                return unit->tag == building.getTag();
+            }) == structures.end()) {
+            updateBuiltStructures(observation, unit);
+        }
+    }
+
+    void OnUnitDestroyed(const sc2::Unit *unit) {
+        sc2::Tag destroyedTag = unit->tag;
+        auto buildingIter = std::find_if(structures.begin(), structures.end(), [destroyedTag](auto const &building) {
+            return building.getTag() == destroyedTag;
+        });
+        if (buildingIter != structures.end()) {
+            buildingIter->setTag(0);
+        }
+    }
+
+    void onBuildingFinished(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        sc2::Tag builtTag = unit->tag;
+        auto buildingIter = std::find_if(structures.begin(), structures.end(), [builtTag](auto const &building) {
+            return building.getTag() == builtTag;
+        });
+        if (buildingIter != structures.end() && buildingIter->isChainBuildLeader()) {
+            auto builtByTag = buildingIter->getBuiltBy();
+            if (observation->GetUnit(builtByTag) != nullptr) { // May have died
+                chainBuild(builtByTag);
+            }
         }
     }
 
 private:
     std::vector<BuildOrderStructure> structures;
-    std::vector<sc2::Tag> builtStructures;
 };
 
 #endif //BUILD_ORDER_H

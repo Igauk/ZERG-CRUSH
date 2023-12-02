@@ -1,20 +1,312 @@
-#include "common/bot_examples.cc"
-
-#include <algorithm>
-#include <iterator>
-#include <iostream>
-
-#include "sc2api/sc2_unit_filters.h"
-#include "sc2lib/sc2_lib.h"
-#include "common/bot_examples.h"
-#include "ray_cast.h"
-
-#include <string>
-#include <optional>
-#include <utility>
-
+#include "zerg_crush.h"
 
 using namespace sc2;
+
+bool ZergCrush::TryBuildUnit(AbilityID abilityTypeForUnit, UnitTypeID buildingUnitType) {
+    const ObservationInterface* observation = Observation();
+
+    auto buildingUnits = observation->GetUnits(IsUnit(buildingUnitType));
+    if (buildingUnits.empty()) return false;
+
+    auto buildingUnit = GetRandomEntry(buildingUnits);
+
+    if (!buildingUnit->orders.empty()) return false;
+    if (buildingUnit->build_progress != 1) return false;
+
+    Actions()->UnitCommand(buildingUnit, abilityTypeForUnit);
+    return true;
+}
+
+// TODO: Copied from Multiplayer Bot
+const Unit* ZergCrush::FindNearestMineralPatch(const Point2D& start) {
+    Units units = Observation()->GetUnits(Unit::Alliance::Neutral);
+    float distance = std::numeric_limits<float>::max();
+    const Unit* target = nullptr;
+    for (const auto& u : units) {
+        if (u->unit_type == UNIT_TYPEID::NEUTRAL_MINERALFIELD) {
+            float d = DistanceSquared2D(u->pos, start);
+            if (d < distance) {
+                distance = d;
+                target = u;
+            }
+        }
+    }
+    //If we never found one return false;
+    if (distance == std::numeric_limits<float>::max()) {
+        return target;
+    }
+    return target;
+}
+
+// TODO: Copied from MultiplayerBot Mine the nearest mineral to Town hall.
+// If we don't do this, probes may mine from other patches if they stray too far from the base after building.
+void ZergCrush::MineIdleWorkers(const Unit* worker, AbilityID worker_gather_command, UnitTypeID vespene_building_type) {
+    const ObservationInterface* observation = Observation();
+    Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
+    Units geysers = observation->GetUnits(Unit::Alliance::Self, IsUnit(vespene_building_type));
+
+    const Unit* valid_mineral_patch = nullptr;
+
+    if (bases.empty()) {
+        return;
+    }
+
+    for (const auto& geyser : geysers) {
+        if (geyser->assigned_harvesters < geyser->ideal_harvesters) {
+            Actions()->UnitCommand(worker, worker_gather_command, geyser);
+            return;
+        }
+    }
+    //Search for a base that is missing workers.
+    for (const auto& base : bases) {
+        //If we have already mined out here skip the base.
+        if (base->ideal_harvesters == 0 || base->build_progress != 1) {
+            continue;
+        }
+        if (base->assigned_harvesters < base->ideal_harvesters) {
+            valid_mineral_patch = FindNearestMineralPatch(base->pos);
+            Actions()->UnitCommand(worker, worker_gather_command, valid_mineral_patch);
+            return;
+        }
+    }
+
+    if (!worker->orders.empty()) {
+        return;
+    }
+
+    //If all workers are spots are filled just go to any base.
+    const Unit* random_base = GetRandomEntry(bases);
+    valid_mineral_patch = FindNearestMineralPatch(random_base->pos);
+    Actions()->UnitCommand(worker, worker_gather_command, valid_mineral_patch);
+}
+
+// TODO: Copied from MultiplayerBot An estimate of how many workers we should have based on what buildings we have
+int ZergCrush::GetExpectedWorkers(UNIT_TYPEID vespene_building_type) {
+    const ObservationInterface* observation = Observation();
+    Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
+    Units geysers = observation->GetUnits(Unit::Alliance::Self, IsUnit(vespene_building_type));
+    int expected_workers = 0;
+    for (const auto& base : bases) {
+        if (base->build_progress != 1) {
+            continue;
+        }
+        expected_workers += base->ideal_harvesters;
+    }
+
+    for (const auto& geyser : geysers) {
+        if (geyser->vespene_contents > 0) {
+            if (geyser->build_progress != 1) {
+                continue;
+            }
+            expected_workers += geyser->ideal_harvesters;
+        }
+    }
+
+    return expected_workers;
+}
+
+// TODO: Copied from MultiplayerBot To ensure that we do not over or under saturate any base.
+void ZergCrush::ManageWorkers(UNIT_TYPEID worker_type, AbilityID worker_gather_command, UNIT_TYPEID vespene_building_type) {
+    const ObservationInterface* observation = Observation();
+    Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
+    Units geysers = observation->GetUnits(Unit::Alliance::Self, IsUnit(vespene_building_type));
+
+    if (bases.empty()) {
+        return;
+    }
+
+    for (const auto& base : bases) {
+        //If we have already mined out or still building here skip the base.
+        if (base->ideal_harvesters == 0 || base->build_progress != 1) {
+            continue;
+        }
+        //if base is
+        if (base->assigned_harvesters > base->ideal_harvesters) {
+            Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(worker_type));
+
+            for (const auto& worker : workers) {
+                if (!worker->orders.empty()) {
+                    if (worker->orders.front().target_unit_tag == base->tag) {
+                        //This should allow them to be picked up by mineidleworkers()
+                        MineIdleWorkers(worker, worker_gather_command,vespene_building_type);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(worker_type));
+    for (const auto& geyser : geysers) {
+        if (geyser->ideal_harvesters == 0 || geyser->build_progress != 1) {
+            continue;
+        }
+        if (geyser->assigned_harvesters > geyser->ideal_harvesters) {
+            for (const auto& worker : workers) {
+                if (!worker->orders.empty()) {
+                    if (worker->orders.front().target_unit_tag == geyser->tag) {
+                        //This should allow them to be picked up by mineidleworkers()
+                        MineIdleWorkers(worker, worker_gather_command, vespene_building_type);
+                        return;
+                    }
+                }
+            }
+        }
+        else if (geyser->assigned_harvesters < geyser->ideal_harvesters) {
+            for (const auto& worker : workers) {
+                if (!worker->orders.empty()) {
+                    //This should move a worker that isn't mining gas to gas
+                    const Unit* target = observation->GetUnit(worker->orders.front().target_unit_tag);
+                    if (target == nullptr) {
+                        continue;
+                    }
+                    if (target->unit_type != vespene_building_type) {
+                        //This should allow them to be picked up by mineidleworkers()
+                        MineIdleWorkers(worker, worker_gather_command, vespene_building_type);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+//TODO: Copied from MultiplayerBot Tries to build a geyser for a base
+bool ZergCrush::TryBuildGas(AbilityID build_ability, UnitTypeID worker_type, Point2D base_location) {
+    const ObservationInterface* observation = Observation();
+    Units geysers = observation->GetUnits(Unit::Alliance::Neutral, IsGeyser());
+
+    //only search within this radius
+    float minimum_distance = 15.0f;
+    Tag closestGeyser = 0;
+    for (const auto& geyser : geysers) {
+        float current_distance = Distance2D(base_location, geyser->pos);
+        if (current_distance < minimum_distance) {
+            if (Query()->Placement(build_ability, geyser->pos)) {
+                minimum_distance = current_distance;
+                closestGeyser = geyser->tag;
+            }
+        }
+    }
+
+    // In the case where there are no more available geysers nearby
+    if (closestGeyser == 0) {
+        return false;
+    }
+    return TryBuildStructure(build_ability, worker_type, closestGeyser);
+
+}
+
+// TODO: Copied from MultiplayerBot Try build structure given a location. This is used most of the time
+bool ZergCrush::TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false) {
+    const ObservationInterface* observation = Observation();
+    Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit_type));
+
+    //if we have no workers Don't build
+    if (workers.empty()) return false;
+
+    // Check to see if there is already a worker heading out to build it
+    for (const auto& worker : workers) {
+        for (const auto& order : worker->orders) {
+            if (order.ability_id == ability_type_for_structure) {
+                return false;
+            }
+        }
+    }
+
+    // If no worker is already building one, get a random worker to build one
+    const Unit* unit = GetRandomEntry(workers);
+
+    // Check to see if unit can make it there
+    if (Query()->PathingDistance(unit, location) < 0.1f) {
+        return false;
+    }
+    if (!isExpansion) {
+        for (const auto& expansion : expansionLocations) {
+            if (Distance2D(location, Point2D(expansion.x, expansion.y)) < 7) {
+                return false;
+            }
+        }
+    }
+    // Check to see if unit can build there
+    if (Query()->Placement(ability_type_for_structure, location)) {
+        Actions()->UnitCommand(unit, ability_type_for_structure, location);
+        return true;
+    }
+    return false;
+
+}
+
+// TODO: Copied from MultiplayerBot Try to build a structure based on tag, Used mostly for Vespene, since the pathing check will fail even though the geyser is "Pathable"
+bool ZergCrush::TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag) {
+    const ObservationInterface* observation = Observation();
+    Units workers = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit_type));
+    const Unit* target = observation->GetUnit(location_tag);
+
+    if (workers.empty()) {
+        return false;
+    }
+
+    // Check to see if there is already a worker heading out to build it
+    for (const auto& worker : workers) {
+        for (const auto& order : worker->orders) {
+            if (order.ability_id == ability_type_for_structure) {
+                return false;
+            }
+        }
+    }
+
+    // If no worker is already building one, get a random worker to build one
+    const Unit* unit = GetRandomEntry(workers);
+
+    // Check to see if unit can build there
+    if (Query()->Placement(ability_type_for_structure, target->pos)) {
+        Actions()->UnitCommand(unit, ability_type_for_structure, target);
+        return true;
+    }
+    return false;
+
+}
+
+// TODO: Copied from MultiplayerBot Expands to nearest location and updates the start location to be between the new location and old bases.
+bool ZergCrush::TryExpand(AbilityID build_ability, UnitTypeID worker_type) {
+    const ObservationInterface* observation = Observation();
+    float minimum_distance = std::numeric_limits<float>::max();
+    Point3D closest_expansion;
+    for (const auto& expansion : expansionLocations) {
+        float current_distance = Distance2D(startingLocation, expansion);
+        if (current_distance < .01f) {
+            continue;
+        }
+
+        if (current_distance < minimum_distance) {
+            if (Query()->Placement(build_ability, expansion)) {
+                closest_expansion = expansion;
+                minimum_distance = current_distance;
+            }
+        }
+    }
+    //only update staging location up till 3 bases.
+    if (TryBuildStructure(build_ability, worker_type, closest_expansion, true) && observation->GetUnits(Unit::Self, IsTownHall()).size() < 4) {
+        baseRallyPoint = Point3D(((baseRallyPoint.x + closest_expansion.x) / 2), ((baseRallyPoint.y + closest_expansion.y) / 2),
+                                 ((baseRallyPoint.z + closest_expansion.z) / 2));
+        return true;
+    }
+    return false;
+
+}
+
+void ZergCrush::ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+    sc2::Units attackableEnemies = observation->GetUnits(sc2::Unit::Alliance::Enemy, TargetableBy(observation, unit));
+    if (!unit->orders.empty()) return;
+    Point2D targetPosition;
+
+    if (!attackableEnemies.empty()) {
+        attackMicro->microUnit(observation, unit);
+        return;
+    }
+
+    Actions()->UnitCommand(unit, ABILITY_ID::SMART, enemyStartingLocation);
+}
 
 bool ZergCrush::TryBuildSCV() {
     const ObservationInterface *observation = Observation();
@@ -24,14 +316,12 @@ bool ZergCrush::TryBuildSCV() {
     //  ALSO, We can call down mules to another base, nearest to this given base may not be most efficient
     for (const auto &base: bases) {
         if (base->unit_type == UNIT_TYPEID::TERRAN_ORBITALCOMMAND && base->energy > 50) {
-            if (FindNearestMineralPatch(base->pos)) {
-                Actions()->UnitCommand(base, ABILITY_ID::EFFECT_CALLDOWNMULE);
-            }
+            if (FindNearestMineralPatch(base->pos)) Actions()->UnitCommand(base, ABILITY_ID::EFFECT_CALLDOWNMULE);
         }
     }
 
     // TODO IAN: If the game lasts this long
-    if (observation->GetFoodWorkers() >= max_worker_count_) {
+    if (observation->GetFoodWorkers() >= MAX_WORKER_COUNT) {
         return false;
     }
 
@@ -58,48 +348,39 @@ bool ZergCrush::TryBuildSCV() {
     return false;
 }
 
+// TODO: Copied from MultiplayerBot
 bool ZergCrush::TryBuildSupplyDepot() {
-    // TODO IAN: replace this with a more specific function that builds at a given location
     const ObservationInterface *observation = Observation();
 
-    // If we are not supply capped, don't build a supply depot. TODO IAN: We should check this outside of this method
-    //                                                              or only optionally, since we may want to build anyways
-    if (observation->GetFoodUsed() < observation->GetFoodCap() - 6) {
-        return false;
-    }
+    if (observation->GetMinerals() < 100) return false;
 
-    if (observation->GetMinerals() < 100) {
-        return false;
-    }
-
-    //check to see if there is already one building
+    // check to see if there is already one building
     Units units = observation->GetUnits(Unit::Alliance::Self, IsUnits(supplyDepotTypes));
     if (observation->GetFoodUsed() < 40) { // TODO IAN: Same comment as above, may only want to check optionally
-        //    not the responsibility of this function
+        //  not the responsibility of this function
         for (const auto &unit: units) {
-            if (unit->build_progress != 1) {
-                return false;
-            }
+            if (unit->build_progress != 1) return false;
         }
     }
 
-    // Try and build a supply depot. Find a random SCV and give it the order.
     float rx = GetRandomScalar();
     float ry = GetRandomScalar();
-    Point2D build_location = Point2D(staging_location_.x + rx * 15, staging_location_.y + ry * 15);
+    Point2D build_location = Point2D(startingLocation.x + rx * 15, startingLocation.y + ry * 15);
     return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SCV, build_location);
 }
 
 void ZergCrush::BuildArmy() {
     const ObservationInterface *observation = Observation();
-    auto unitsToBuild = armyComposition->unitsToBuild(observation);
+
+    auto allSquadrons = armyComposition->getAllSquadrons();
+    auto unitsToBuild = armyComposition->squadronsToBuild(allSquadrons, observation);
     for (const auto &unit: unitsToBuild) {
         // Grab army and building counts
         Units buildings = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit->getBuildingStructureType()));
 
         for (const auto &building: buildings) {
             auto addOn = observation->GetUnit(building->add_on_tag);
-            uint32_t numOrders = 1;
+            uint32_t numOrders = 1; // Number of orders to queue at a time
             if (addOn && std::find(reactorTypes.begin(), reactorTypes.end(), addOn->unit_type) != reactorTypes.end()) {
                 numOrders++; // If we have a reactor build two at a time
             }
@@ -135,37 +416,38 @@ void ZergCrush::ManageMacro() {
                 BuildRefinery();
                 break;
             case UNIT_TYPEID::TERRAN_COMMANDCENTER:
-                TryBuildExpansionCom();
+                TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
                 break;
             case UNIT_TYPEID::TERRAN_ORBITALCOMMAND: {
-                std::optional<Unit> commandCenter = structure->getBaseStruct(observation);
-                if (commandCenter.has_value()) {
-                    Actions()->UnitCommand(&commandCenter.value(), ABILITY_ID::MORPH_ORBITALCOMMAND);
+                const Unit* commandCenter = structure->getBaseStruct(observation);
+                if (commandCenter) {
+                    Actions()->UnitCommand(commandCenter, ABILITY_ID::MORPH_ORBITALCOMMAND);
                 } else {
                     // All command centers have become orbital commands
-                    structure->built = true;
+                    structure->setBuiltAddOn(true);
                 }
                 break;
             }
             default:
                 if (structure->isAddOn()) {
-                    std::optional<Unit> baseStruct = structure->getBaseStruct(observation);
-                    if (baseStruct.has_value()) {
-                        structure->built = TryBuildAddOn(structure->getAbilityId(), baseStruct.value().tag);
+                    const Unit* baseStruct = structure->getBaseStruct(observation);
+                    if (baseStruct) {
+                        structure->setBuiltAddOn(TryBuildAddOn(structure->getAbilityId(), baseStruct->tag));
                     }
                     break;
                 }
-                //barracks in the wall
-                if(structure->getUnitTypeID() == UNIT_TYPEID::TERRAN_BARRACKS && structure->part_of_wall) {
-                    //std::cout << "wall barrack" << std::endl;
-                    TryBuildWallPiece(UNIT_TYPEID::TERRAN_BARRACKS);
-                    break;
+                sc2::Tag tag;
+                tag = structure->getBuiltBy();
+                if (tag) {
+                    TryBuildStructureRandomWithUnit(structure->getAbilityId(), Observation()->GetUnit(tag));
+                } else {
+                    TryBuildStructureRandom(structure->getAbilityId(), UNIT_TYPEID::TERRAN_SCV);
                 }
-                TryBuildStructureRandom(structure->getAbilityId(), UNIT_TYPEID::TERRAN_SCV);
         }
     }
 }
 
+// TODO: Copied from MultiplayerBot
 bool ZergCrush::TryBuildAddOn(AbilityID ability_type_for_structure, Tag base_structure) {
     const Unit *unit = Observation()->GetUnit(base_structure);
     if (unit == nullptr) {
@@ -181,397 +463,134 @@ bool ZergCrush::TryBuildAddOn(AbilityID ability_type_for_structure, Tag base_str
     return false;
 }
 
-bool ZergCrush::TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type) {
+bool ZergCrush::IsTooCloseToStructures(const Point2D& buildLocation, const Units& structures, float minDistance) {
+    return std::any_of(structures.begin(), structures.end(), [&](const auto& structure) {
+        return (structure->unit_type != UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED) &&
+               (Distance2D(structure->pos, buildLocation) < minDistance);
+    });
+}
+
+// Original function with random build location
+// TODO: Copied from MultiplayerBot
+bool ZergCrush::TryBuildStructureRandom(AbilityID abilityTypeForStructure, UnitTypeID unitType) {
     float rx = GetRandomScalar();
     float ry = GetRandomScalar();
-    Point2D build_location = Point2D(staging_location_.x + rx * 15, staging_location_.y + ry * 15);
+    Point2D buildLocation = Point2D(startingLocation.x + rx * 15, startingLocation.y + ry * 15);
 
     Units units = Observation()->GetUnits(Unit::Self, IsStructure(Observation()));
-    float distance = std::numeric_limits<float>::max();
-    for (const auto &u: units) {
-        if (u->unit_type == UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED) {
-            continue;
-        }
-        float d = Distance2D(u->pos, build_location);
-        if (d < distance) {
-            distance = d;
-        }
-    }
-    if (distance < 6) {
+
+    if (IsTooCloseToStructures(buildLocation, units, 6.0f)) {
         return false;
     }
-    return TryBuildStructure(ability_type_for_structure, unit_type, build_location);
+
+    return TryBuildStructure(abilityTypeForStructure, unitType, buildLocation);
+}
+
+// New function taking a const Unit*
+bool ZergCrush::TryBuildStructureRandomWithUnit(AbilityID abilityTypeForStructure, const Unit* unit) {
+    float rx = GetRandomScalar();
+    float ry = GetRandomScalar();
+    if (unit == nullptr) return false; // died
+    Point2D buildLocation = Point2D(unit->pos.x + rx * 6, unit->pos.y + ry * 6);
+
+    Units units = Observation()->GetUnits(Unit::Self, IsStructure(Observation()));
+
+    if (IsTooCloseToStructures(buildLocation, units, 6.0f)) {
+        return false;
+    }
+
+    return TryBuildStructureUnit(abilityTypeForStructure, unit, buildLocation, false);
+}
+
+
+bool ZergCrush::TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit* unit, Point2D location, bool isExpansion = false) {
+    // Check to see if unit can make it there
+    if (Query()->PathingDistance(unit, location) < 0.1f) {
+        return false;
+    }
+    if (!isExpansion) {
+        for (const auto& expansion : expansionLocations) {
+            if (Distance2D(location, Point2D(expansion.x, expansion.y)) < 7) {
+                return false;
+            }
+        }
+    }
+
+    // Check to see if unit can build there
+    if (Query()->Placement(ability_type_for_structure, location)) {
+        Actions()->UnitCommand(unit, ability_type_for_structure, location);
+        return true;
+    }
+    return false;
 }
 
 void ZergCrush::ManageUpgrades() {
     const ObservationInterface *observation = Observation();
     auto upgrades = observation->GetUpgrades();
-    size_t base_count = observation->GetUnits(Unit::Alliance::Self, IsTownHall()).size();
 
-
-    if (upgrades.empty()) {
-        TryBuildUnit(ABILITY_ID::RESEARCH_STIMPACK, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    } else {
-        for (const auto &upgrade: upgrades) {
-            if (CountUnitType(observation, UNIT_TYPEID::TERRAN_ARMORY) > 0) {
-                if (upgrade == UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL1 && base_count > 2) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-                } else if (upgrade == UPGRADE_ID::TERRANINFANTRYARMORSLEVEL1 && base_count > 2) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-                }
-                if (upgrade == UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL2 && base_count > 4) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-                } else if (upgrade == UPGRADE_ID::TERRANINFANTRYARMORSLEVEL2 && base_count > 4) {
-                    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-                }
-            }
-            // TODO: Reorder this in terms of what we want to do
-            TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-            TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-            TryBuildUnit(ABILITY_ID::RESEARCH_COMBATSHIELD, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-            TryBuildUnit(ABILITY_ID::RESEARCH_CONCUSSIVESHELLS, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-            TryBuildUnit(ABILITY_ID::RESEARCH_PERSONALCLOAKING, UNIT_TYPEID::TERRAN_GHOSTACADEMY);
-            TryBuildUnit(ABILITY_ID::RESEARCH_BANSHEECLOAKINGFIELD, UNIT_TYPEID::TERRAN_STARPORTTECHLAB);
-        }
-    }
+    TryBuildUnit(ABILITY_ID::RESEARCH_STIMPACK, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    TryBuildUnit(ABILITY_ID::RESEARCH_COMBATSHIELD, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
+    TryBuildUnit(ABILITY_ID::RESEARCH_CONCUSSIVESHELLS, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
 }
 
 void ZergCrush::ManageArmy() {
     const ObservationInterface *observation = Observation();
 
-    Units enemy_units = observation->GetUnits(Unit::Alliance::Enemy);
     Units army = observation->GetUnits(Unit::Alliance::Self, IsArmy(observation));
-    Units nuke = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_NUKE));
+    uint32_t waitUntilSupply = 20; // TODO: Think of better plan
 
-    int waitUntilSupply = 100;
+    auto allSquadrons = armyComposition->getAllSquadrons();
 
-    for (const auto &unit: army) {
-        if (enemy_units.empty() && observation->GetFoodArmy() < waitUntilSupply) {
-            switch (unit->unit_type.ToType()) {
-                case UNIT_TYPEID::TERRAN_SIEGETANKSIEGED: {
-                    Actions()->UnitCommand(unit, ABILITY_ID::MORPH_UNSIEGE);
-                    break;
-                }
-                default:
-                    RetreatWithUnit(unit, staging_location_);
-                    break;
+    std::vector<ArmySquadron *> scouts = armyComposition->getSquadronsByType(allSquadrons, SCOUT);
+    for (auto &scoutSquadron: scouts) {
+        if (scoutSquadron->needMore() || scoutSquadron->getSquadron().empty())
+            continue; // Only scout with completed squadrons
+        for (const auto &unit: scoutSquadron->getSquadron()) ScoutWithUnit(observation, unit);
+    }
+
+    std::vector<ArmySquadron *> main = armyComposition->getSquadronsByType(allSquadrons, MAIN);
+    Units enemyUnits = observation->GetUnits(Unit::Alliance::Enemy);
+    for (auto &mainSquadron: main) {
+        for (const auto &unit: mainSquadron->getSquadron()) {
+            if (!enemyUnits.empty()) {
+                attackMicro->microUnit(observation, unit);
+                continue;
             }
-        } else if (!enemy_units.empty()) {
-            switch (unit->unit_type.ToType()) {
-                case UNIT_TYPEID::TERRAN_WIDOWMINE: {
-                    float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                    if (distance < 6) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::BURROWDOWN);
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_MARINE: {
-                    if (stimResearched && !unit->orders.empty()) {
-                        if (unit->orders.front().ability_id == ABILITY_ID::ATTACK) {
-                            float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                            bool has_stimmed = false;
-                            for (const auto &buff: unit->buffs) {
-                                if (buff == BUFF_ID::STIMPACK) {
-                                    has_stimmed = true;
-                                }
-                            }
-                            if (distance < 6 && !has_stimmed) {
-                                Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_STIM);
-                                break;
-                            }
-                        }
 
-                    }
-                    AttackWithUnit(unit, observation);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_MARAUDER: {
-                    if (stimResearched && !unit->orders.empty()) {
-                        if (unit->orders.front().ability_id == ABILITY_ID::ATTACK) {
-                            float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                            bool has_stimmed = false;
-                            for (const auto &buff: unit->buffs) {
-                                if (buff == BUFF_ID::STIMPACK) {
-                                    has_stimmed = true;
-                                }
-                            }
-                            if (distance < 7 && !has_stimmed) {
-                                Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_STIM);
-                                break;
-                            }
-                        }
-                    }
-                    AttackWithUnit(unit, observation);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_GHOST: {
-                    float distance = std::numeric_limits<float>::max();
-                    const Unit *closest_unit;
-                    for (const auto &u: enemy_units) {
-                        float d = Distance2D(u->pos, unit->pos);
-                        if (d < distance) {
-                            distance = d;
-                            closest_unit = u;
-                        }
-                    }
-                    if (ghostCloakResearched) {
-                        if (distance < 7 && unit->energy > 50) {
-                            Actions()->UnitCommand(unit, ABILITY_ID::BEHAVIOR_CLOAKON);
-                            break;
-                        }
-                    }
-                    if (nukeBuilt) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_NUKECALLDOWN, closest_unit->pos);
-                    } else if (unit->energy > 50 && !unit->orders.empty()) {
-                        if (unit->orders.front().ability_id == ABILITY_ID::ATTACK)
-                            Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_GHOSTSNIPE, unit);
-                        break;
-                    }
-                    AttackWithUnit(unit, observation);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_SIEGETANK: {
-                    float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                    if (distance < 11) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::MORPH_SIEGEMODE);
-                    } else {
-                        AttackWithUnit(unit, observation);
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_SIEGETANKSIEGED: {
-                    float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                    if (distance > 13) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::MORPH_UNSIEGE);
-                    } else {
-                        AttackWithUnit(unit, observation);
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_MEDIVAC: {
-                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bioUnitTypes));
-                    if (unit->orders.empty()) {
-                        for (const auto &bio_unit: bio_units) {
-                            if (bio_unit->health < bio_unit->health_max) {
-                                Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_HEAL, bio_unit);
-                                break;
-                            }
-                        }
-                        if (!bio_units.empty()) {
-                            Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, bio_units.front());
-                        }
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_VIKINGFIGHTER: {
-                    Units flying_units = observation->GetUnits(Unit::Enemy, IsFlying());
-                    if (flying_units.empty()) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::MORPH_VIKINGASSAULTMODE);
-                    } else {
-                        Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, flying_units.front());
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_VIKINGASSAULT: {
-                    Units flying_units = observation->GetUnits(Unit::Enemy, IsFlying());
-                    if (!flying_units.empty()) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::MORPH_VIKINGFIGHTERMODE);
-                    } else {
-                        AttackWithUnit(unit, observation);
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_CYCLONE: {
-                    Units flying_units = observation->GetUnits(Unit::Enemy, IsFlying());
-                    if (!flying_units.empty() && unit->orders.empty()) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_LOCKON, flying_units.front());
-                    } else if (!flying_units.empty() && !unit->orders.empty()) {
-                        if (unit->orders.front().ability_id != ABILITY_ID::EFFECT_LOCKON) {
-                            Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_LOCKON, flying_units.front());
-                        }
-                    } else {
-                        AttackWithUnit(unit, observation);
-                    }
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_HELLION: {
-                    if (CountUnitType(observation, UNIT_TYPEID::TERRAN_ARMORY) > 0) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::MORPH_HELLBAT);
-                    }
-                    AttackWithUnit(unit, observation);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_BANSHEE: {
-                    if (bansheeCloakResearched) {
-                        float distance = GetClosestEnemyUnitDistance(enemy_units, unit);
-                        if (distance < 7 && unit->energy > 50) {
-                            Actions()->UnitCommand(unit, ABILITY_ID::BEHAVIOR_CLOAKON);
-                        }
-                    }
-                    AttackWithUnit(unit, observation);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_RAVEN: {
-                    if (unit->energy > 125) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::EFFECT_HUNTERSEEKERMISSILE, enemy_units.front());
-                        break;
-                    }
-                    if (unit->orders.empty()) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, army.front()->pos);
-                    }
-                    break;
-                }
-                default: {
-                    AttackWithUnit(unit, observation);
-                }
-            }
-        } else { // There may or may not be enemies, but we are at less than `waitUntilSupply`
-            switch (unit->unit_type.ToType()) {
-                case UNIT_TYPEID::TERRAN_SIEGETANKSIEGED: {
-                    Actions()->UnitCommand(unit, ABILITY_ID::MORPH_UNSIEGE);
-                    break;
-                }
-                case UNIT_TYPEID::TERRAN_MEDIVAC: {
-                    Units bio_units = observation->GetUnits(Unit::Self, IsUnits(bioUnitTypes));
-                    if (unit->orders.empty()) {
-                        Actions()->UnitCommand(unit, ABILITY_ID::ATTACK, bio_units.front()->pos);
-                    }
-                    break;
-                }
-                default:
-                    //RayCastWithUnit(unit, *observation);
-                    ScoutWithUnit(unit, observation);
-                    break;
+            if (waitUntilSupply >= observation->GetArmyCount()) {
+                Actions()->UnitCommand(unit, ABILITY_ID::SMART, baseRallyPoint);
+            } else {
+                ScoutWithUnit(observation, unit);
             }
         }
     }
 }
 
-float ZergCrush::GetClosestEnemyUnitDistance(Units &enemyUnit, const Unit *const &unit) {
-    float distance = std::numeric_limits<float>::max();
-    for (const auto &u: enemyUnit) {
-        float d = Distance2D(u->pos, unit->pos);
-        if (d < distance) {
-            distance = d;
-        }
-    }
-    return distance;
-}
-
-void ZergCrush::RayCastWithUnit(const Unit* unit, const ObservationInterface &observation) {
-    Point2D current_pos = unit->pos;
-    RayCastInstance cast(unit);
-
-    if (cast.castWithUnit(unit, observation)) {
-        std::cout << "NO WAY" << std::endl;
-    }
-    
-}
-
-bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
-    const ObservationInterface *observation = Observation();
-    Positions pos;
-    std::array<std::vector<sc2::Point2D>, 4> map_postions;
-    
-    
-    //get the postions of the map we are on
-    switch(pos.getMap(observation)) {
-        case Maps::CACTUS:
-            map_postions = pos.cactus_postions;
-            break;
-        case Maps::BELSHIR:
-            map_postions = pos.belshir_postions;
-            break;
-        case Maps::PROXIMA:
-            map_postions = pos.proxima_postions;
-            break;
-        default:
-            break;
-    }
-    
-
-    //figure out which ramp we are closest to
-    int closest_ramp = 0;   
-    int index = 1;
-
-    sc2::Point2D startLocation = startLocation_;
-    float closest_distance = DistanceSquared2D(startLocation, map_postions[0][0]);
-    //the most scuffed for loop ever
-    for (const auto& pos : map_postions) {
-        float test_distance = DistanceSquared2D(startLocation, pos[index]);
-        if(test_distance < closest_distance) 
-        {closest_ramp = index; closest_distance = test_distance;}
-        ++index;
-
-    }
-
-    //set the build location based on structure type/current wall progress
-    //supply depot = map_postions[0]
-    //barrack 1 = map_postions[1]
-    //barrack 2 = map_postions[2]
-    if (piece == UNIT_TYPEID::TERRAN_BARRACKS) {
-        //check if its the first or second barrack
-        if (Query()->Placement(ABILITY_ID::BUILD_BARRACKS, map_postions[2][index])) {
-            //std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
-            return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[2][closest_ramp]);
-        }
-        else {
-            //std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
-            return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[1][closest_ramp]);
-        }
-    }
-    //supply depot
-    else {
-        //std::cout << "building depot " << map_postions[1][index].x << std::endl;
-        return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SCV, map_postions[0][closest_ramp]);
-        }
-
-}
-
-bool ZergCrush::TryBuildExpansionCom() {
-    const ObservationInterface *observation = Observation();
-    Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
-    //Don't have more active bases than we can provide workers for
-    if (GetExpectedWorkers(UNIT_TYPEID::TERRAN_REFINERY) > max_worker_count_) {
-        return false;
-    }
-    // If we have extra workers around, try and build another command center
-    if (GetExpectedWorkers(UNIT_TYPEID::TERRAN_REFINERY) < observation->GetFoodWorkers() - 10) {
-        return TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-    }
-    //Only build another Hatch if we are floating extra minerals
-    if (observation->GetMinerals() > std::min<size_t>(bases.size() * 400, 1200)) {
-        return TryExpand(ABILITY_ID::BUILD_COMMANDCENTER, UNIT_TYPEID::TERRAN_SCV);
-    }
-    return false;
-}
-
+// TODO: Copied from MultiplayerBot
 bool ZergCrush::BuildRefinery() {
     const ObservationInterface *observation = Observation();
     Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
 
-    if (CountUnitType(observation, UNIT_TYPEID::TERRAN_REFINERY) >=
-        observation->GetUnits(Unit::Alliance::Self, IsTownHall()).size() * 2) {
+    if (observation->GetUnits(sc2::Unit::Self, IsUnit(sc2::UNIT_TYPEID::TERRAN_REFINERY)).size() >= bases.size() * 2) {
         return false;
     }
 
     for (const auto &base: bases) {
-        if (base->assigned_harvesters >= base->ideal_harvesters) {
-            if (base->build_progress == 1) {
-                if (TryBuildGas(ABILITY_ID::BUILD_REFINERY, UNIT_TYPEID::TERRAN_SCV, base->pos)) {
-                    return true;
-                }
-            }
-        }
+        TryBuildGas(ABILITY_ID::BUILD_REFINERY, UNIT_TYPEID::TERRAN_SCV, base->pos);
     }
-    return false;
+    return true;
 }
 
 void ZergCrush::OnStep() {
     const ObservationInterface *observation = Observation();
     Units units = observation->GetUnits(Unit::Self, IsArmy(observation));
     Units nukes = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_NUKE));
-    
     //Throttle some behavior that can wait to avoid duplicate orders.
     int frames_to_skip = observation->GetFoodUsed() >= observation->GetFoodCap() ? 6 : 4;
 
@@ -581,18 +600,7 @@ void ZergCrush::OnStep() {
         return; // Only act every 4th frame if we are not capped and every 6th frame otherwise
     }
 
-    if (!nuke_detected && nukes.empty()) {
-        ManageArmy(); // If we have not been nuked and we don't have nukes ourselves
-    } else {
-        if (nuke_detected_frame + 400 < observation->GetGameLoop()) {
-            nuke_detected = false; // We assume at this point that we fully retreated away from the nuke
-        }
-        for (const auto &unit: units) {
-            // TODO IAN: If we are nuked, can we tell the nuke direction? Is there cases where retreating to
-            //  our start location could be dumb?
-            RetreatWithUnit(unit, startLocation_);
-        }
-    }
+    ManageArmy();
 
     ManageMacro();
 
@@ -611,22 +619,6 @@ void ZergCrush::OnUnitIdle(const Unit *unit) {
         case UNIT_TYPEID::TERRAN_SCV: {
             MineIdleWorkers(unit, ABILITY_ID::HARVEST_GATHER, UNIT_TYPEID::TERRAN_REFINERY);
             break;
-        }
-        default:
-            break;
-    }
-}
-
-void ZergCrush::OnUpgradeCompleted(UpgradeID upgrade) {
-    switch (upgrade.ToType()) {
-        case UPGRADE_ID::STIMPACK: {
-            stimResearched = true;
-        }
-        case UPGRADE_ID::PERSONALCLOAKING: {
-            ghostCloakResearched = true;
-        }
-        case UPGRADE_ID::BANSHEECLOAK: {
-            bansheeCloakResearched = true;
         }
         default:
             break;
@@ -660,61 +652,129 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR,
-                                std::optional(UNIT_TYPEID::TERRAN_BARRACKS)),
+            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB,
-                                std::optional(UNIT_TYPEID::TERRAN_FACTORY)),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB,
-                                std::optional(UNIT_TYPEID::TERRAN_STARPORT)),
-            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND,
-                                std::optional(UNIT_TYPEID::TERRAN_COMMANDCENTER)),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
     };
 
-    std::vector<ArmyUnit> tvtArmyComposition = {
-            ArmyUnit(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
+    std::vector<ArmySquadron *> tvtArmyComposition = {
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
             }),
-            ArmyUnit(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 10},
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_REAPER), 1, 10},
             }),
-            ArmyUnit(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
             }),
-            ArmyUnit(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 3},
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 3},
             }),
     };
 
-    buildOrder = new BuildOrder(tvtStructures);
-    armyComposition = new ArmyComposition(tvtArmyComposition);
-    /*
-    std::cout << enemyRace << std::endl;
+    std::vector<BuildOrderStructure> tvzStructures = {
+            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
+            BuildOrderStructure(observation, 1, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 29, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB),
+            BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 53, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 57, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 59, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 59, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 60, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 64, UNIT_TYPEID::TERRAN_FACTORYTECHLAB),
+            BuildOrderStructure(observation, 73, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 78, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 79, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 82, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 82, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 95, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_ARMORY),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 108, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 139, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 150, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
+
+    };
+
+    // TODO: BATALLION - combination of squadrons?
+    std::vector<ArmySquadron *> tvzArmyComposition = {
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 4},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 10},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 8},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 5},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_STARPORT),        1, 2},
+            }),
+    };
+
     switch (enemyRace) {
         case Random:
-        case Terran: 
-            std::cout << "3" << std::endl;
+        case Terran: {
             buildOrder = new BuildOrder(tvtStructures);
             armyComposition = new ArmyComposition(tvtArmyComposition);
             break;
-        
-        case Zerg:
+        }
+        case Zerg: {
+            buildOrder = new BuildOrder(tvzStructures);
+            armyComposition = new ArmyComposition(tvzArmyComposition);
+            break;
+        }
         case Protoss:
             break;
-            break;
-        default:
-            std::cout << "4" << std::endl;
     }
-    */
 }
 
 void ZergCrush::setEnemyRace(const ObservationInterface *observation) {
     auto playerId = observation->GetPlayerID();
-    enemyRace = std::find_if(game_info_.player_info.begin(), game_info_.player_info.end(), [playerId](auto playerInfo) {
-        return playerInfo.player_id != playerId && playerInfo.player_type == Participant;
-    })->race_actual;
+    auto gameInfo = observation->GetGameInfo();
+    enemyRace = std::find_if(gameInfo.player_info.begin(), gameInfo.player_info.end(), [playerId](auto playerInfo) {
+        return playerInfo.player_id != playerId && playerInfo.player_type == Participant ||
+               playerInfo.player_type == Computer;
+    })->race_requested;
 }
 
 void ZergCrush::OnUnitEnterVision(const sc2::Unit *) {
@@ -722,6 +782,19 @@ void ZergCrush::OnUnitEnterVision(const sc2::Unit *) {
 }
 
 void ZergCrush::OnUnitCreated(const sc2::Unit *unit) {
-    buildOrder->OnUnitCreated(unit);
+    buildOrder->OnUnitCreated(Observation(), unit);
     armyComposition->setDesiredUnitCounts(Observation());
+    armyComposition->assignUnitToSquadron(unit);
+}
+
+void ZergCrush::OnBuildingConstructionComplete(const Unit *unit) {
+    buildOrder->onBuildingFinished(Observation(), unit);
+}
+
+void ZergCrush::OnUnitDestroyed(const sc2::Unit *unit) {
+    buildOrder->OnUnitDestroyed(unit);
+}
+
+void ZergCrush::OnUpgradeCompleted(sc2::UpgradeID upgradeId) {
+    attackMicro->onUpgradeComplete(upgradeId);
 }

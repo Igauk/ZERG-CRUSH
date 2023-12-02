@@ -439,7 +439,7 @@ void ZergCrush::ManageArmy() {
                     break;
                 }
                 default:
-                    RayCastWithUnit(unit, *observation);
+                    //RayCastWithUnit(unit, *observation);
                     ScoutWithUnit(unit, observation);
                     break;
             }
@@ -571,7 +571,7 @@ void ZergCrush::OnStep() {
     const ObservationInterface *observation = Observation();
     Units units = observation->GetUnits(Unit::Self, IsArmy(observation));
     Units nukes = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_NUKE));
-
+    
     //Throttle some behavior that can wait to avoid duplicate orders.
     int frames_to_skip = observation->GetFoodUsed() >= observation->GetFoodCap() ? 6 : 4;
 

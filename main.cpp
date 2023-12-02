@@ -4,13 +4,12 @@
 #include "sc2utils/sc2_manage_process.h"
 #include "sc2utils/sc2_arg_parser.h"
 
-#include "BasicSc2Bot.h"
+#include "zerg_crush.h"
 #include "LadderInterface.h"
-#include "cpp-sc2/examples/common/bot_examples.h"
 
 // LadderInterface allows the bot to be tested against the built-in AI or
 // played against other bots
 int main(int argc, char* argv[]) {
-	RunBot(argc, argv, new sc2::ZergCrush(), sc2::Race::Terran);
+	RunBot(argc, argv, new ZergCrush(), sc2::Race::Terran);
 	return 0;
 }

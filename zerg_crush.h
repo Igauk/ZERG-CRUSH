@@ -53,9 +53,12 @@ public:
     void OnUpgradeCompleted(UpgradeID upgradeId) final;
 
 private:
-    std::vector<UNIT_TYPEID> supplyDepotTypes = {UNIT_TYPEID::TERRAN_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED };
-    std::vector<UNIT_TYPEID> bioUnitTypes = {UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_GHOST, UNIT_TYPEID::TERRAN_REAPER };
-    std::vector<UNIT_TYPEID> reactorTypes = {UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_FACTORYREACTOR};
+    std::vector<UNIT_TYPEID> supplyDepotTypes = {UNIT_TYPEID::TERRAN_SUPPLYDEPOT,
+                                                 UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED};
+    std::vector<UNIT_TYPEID> bioUnitTypes = {UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_MARAUDER,
+                                             UNIT_TYPEID::TERRAN_GHOST, UNIT_TYPEID::TERRAN_REAPER};
+    std::vector<UNIT_TYPEID> reactorTypes = {UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_STARPORTREACTOR,
+                                             UNIT_TYPEID::TERRAN_FACTORYREACTOR};
 
     const uint32_t MAX_WORKER_COUNT = 70;
 
@@ -84,15 +87,16 @@ private:
      */
     Race enemyRace;
 
-    BuildOrder* buildOrder;
-    ArmyComposition* armyComposition;
-    ZergCrushMicro* attackMicro;
+    BuildOrder *buildOrder;
+    ArmyComposition *armyComposition;
+    ZergCrushMicro *attackMicro;
 
     void setEnemyRace(const ObservationInterface *observation);
 
     void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
 
-    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+    bool
+    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -100,21 +104,25 @@ private:
 
     bool TryBuildUnit(AbilityID abilityTypeForUnit, UnitTypeID buildingUnitType);
 
-    void ManageWorkers(UNIT_TYPEID worker_type, AbilityID worker_gather_command, UNIT_TYPEID vespene_building_type);
-
-    int GetExpectedWorkers(UNIT_TYPEID vespene_building_type);
-
     bool TryBuildGas(AbilityID build_ability, UnitTypeID worker_type, Point2D base_location);
-
-    void MineIdleWorkers(const Unit *worker, AbilityID worker_gather_command, UnitTypeID vespene_building_type);
 
     bool TryExpand(AbilityID build_ability, UnitTypeID worker_type);
 
-    bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
+    bool
+    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
 
     bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag);
 
     const Unit *FindNearestMineralPatch(const Point2D &start);
+
+    /**
+     * Finds a job for an idle SCV to do, finding a geyser or base requiring more SCVs
+     */
+    void HandleIdleWorker(const Unit *worker);
+
+    void TryCallDownMule();
+
+    int GetExpectedWorkers();
 };
 
 #endif

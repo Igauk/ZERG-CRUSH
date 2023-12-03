@@ -155,17 +155,19 @@ int ZergCrush::DetermineThreshold(const ObservationInterface &observation) {
         int army_size = army->getSquadron().size();
         if (army_size > largest_army) {largest_army = army_size;}
    }
+   //std::cout << "threshhold :" << largest_army << std::endl;
    return std::max(10, largest_army);
 
 }
 
 void ZergCrush::OnRushDetected(Race enemyRace) {
-    std::cout << "RUSH DETECTED" << std::endl;
+    //std::cout << "RUSH DETECTED" << std::endl;
     const ObservationInterface *observation = Observation();
 
     //raise all supply depots
     Units supply_depots = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT));
     for (const auto &depot : supply_depots) {
+        std::cout << "raising depots" << std::endl;
         Actions()->UnitCommand(depot, ABILITY_ID::MORPH_SUPPLYDEPOT_RAISE);
     }
 
@@ -210,6 +212,7 @@ void ZergCrush::ManageMacro() {
     //skip over this if we are being attacked
     if(!DetectRush(enemyRace)) {
         for (const auto& supply_depot : supply_depots) {
+            std::cout << "lowering depot" << std::endl;
             Actions()->UnitCommand(supply_depot, ABILITY_ID::MORPH_SUPPLYDEPOT_LOWER);
         }
     }
@@ -242,11 +245,27 @@ void ZergCrush::ManageMacro() {
                 break;
             }
             case UNIT_TYPEID::TERRAN_BUNKER: {
+                std::cout << "building bunker" << std::endl;
                 //possible bunker locations:
                 /*
                 -near the starting base
                 -on the bottom of the ramp
                 */
+               Units command_centers = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+               int farthest_command_center = 0;
+               int index = 0;
+               float farthest_distance = DistanceSquared3D(startingLocation, command_centers[0]->pos);
+               for (const auto& center: command_centers) {
+                    float new_distance = DistanceSquared3D(startingLocation, command_centers[index]->pos);
+                    if (new_distance > farthest_distance) {
+                        farthest_distance = new_distance;
+                        farthest_command_center = index;
+                    }
+                    ++index;
+               }
+               Point2D bunker_pos = getRandomLocationBy(command_centers[farthest_command_center]->pos, 5.0);
+               TryBuildStructure(ABILITY_ID::BUILD_BUNKER, UNIT_TYPEID::TERRAN_SCV, bunker_pos, false);
+
                break;
             }
             
@@ -897,9 +916,10 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_BUNKER),
             BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 29, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB),
+            BuildOrderStructure(observation, 31, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB),
             BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),

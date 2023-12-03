@@ -11,6 +11,8 @@
 #include "army_comp.h"
 #include "attack.h"
 #include "filters.h"
+#include "positions.h"
+#include "ray_cast.h"
 
 static const float SQUADRON_CLUSTER_DISTANCE = 5.0f;
 static const float ARMY_CLUSTER_DISTANCE = 2 * SQUADRON_CLUSTER_DISTANCE;
@@ -28,6 +30,10 @@ public:
     bool TryBuildFrom(AbilityID abilityId, Tag baseStructure);
 
     bool TryBuildStructureRandom(AbilityID abilityTypeForStructure, UnitTypeID unitType);
+
+    bool TryBuildWallPiece(sc2::UnitTypeID piece);
+
+    void RayCastWithUnit(const Unit* unit, const ObservationInterface &observation);
 
     void BuildArmy();
 

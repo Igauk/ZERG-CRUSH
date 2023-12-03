@@ -119,6 +119,8 @@ public:
     void setBuiltBy(sc2::Tag builtBy) {
         BuildOrderStructure::builtBy = builtBy;
     }
+    
+    bool getChainBuild() const {return chainBuild;}
 
     bool isChainBuild() const {
         return chainBuild && !supplyRequirement;

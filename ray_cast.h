@@ -42,6 +42,11 @@ public:
 
     bool isChokepoint(const Scores &scores) {
         //some threshold value 
+        float max_score = scores[0];
+        for (const auto &score : scores) {
+            if (score > max_score) {max_score = score;}
+        }
+        return max_score >= 3;
 
     }
 

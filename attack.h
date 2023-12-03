@@ -7,6 +7,11 @@
 struct MicroInformation {
     MicroInformation(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         auto data = observation->GetUnitTypeData().at(unit->unit_type);
+        if (data.weapons.empty()) {
+            range = 0;
+            strongAgainst = {};
+            return;
+        }
         range = data.weapons.front().range;
         for (const auto &bonus: data.weapons.front().damage_bonus) {
             strongAgainst.push_back(bonus.attribute);
@@ -47,8 +52,6 @@ public:
         }
 
     }
-
-    // TODO: LONE WOLF AVOIDANCE
 
 private:
 
@@ -96,18 +99,18 @@ private:
     void attackWeakest(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         auto microInfo = MicroInformation(observation, unit);
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
-        auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, TargetableWithAttribute(
+        auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter<TargetableBy, HasAttribute>(
                 targetableByUnit, HasAttribute(observation, microInfo.strongAgainst)));
         if (getClosestDistanceTo(weakEnemies, unit) <= microInfo.range) { // TODO: with least health
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
             return;
         }
-        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, targetableByUnit);
+        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter<WithinDistanceOf, TargetableBy>(WithinDistanceOf(unit, 30.0f), targetableByUnit));
         if (getClosestDistanceTo(allEnemies, unit) <= microInfo.range) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
             return;
-        } else if (!allEnemies.empty() && getClosestDistanceTo(allEnemies, unit) < 15) {
-            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, allEnemies.front());
+        } else if (!allEnemies.empty()) {
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, allEnemies.front()->pos);
             return;
         }
     }

@@ -7,11 +7,38 @@
 #ifndef FILTERS_H
 #define FILTERS_H
 
+template <typename Filter1, typename Filter2>
+struct CombinedFilter {
+    Filter1 filter1;
+    Filter2 filter2;
+
+    CombinedFilter(Filter1 f1, Filter2 f2) : filter1(f1), filter2(f2) {}
+
+    bool operator()(const sc2::Unit &unit) {
+        return filter1(unit) && filter2(unit);
+    }
+};
+
 
 struct IsFlying {
     bool operator()(const sc2::Unit &unit) {
         return unit.is_flying;
     }
+};
+
+struct WithinDistanceOf {
+    explicit WithinDistanceOf(const sc2::Unit* unit, float distance): distance_(distance) {
+        position_ = unit->pos;
+    };
+
+    explicit WithinDistanceOf(const sc2::Point2D position, float distance): distance_(distance), position_(position) {};
+
+    bool operator()(const sc2::Unit &unit) {
+        return sc2::Distance2D(unit.pos, position_) <= distance_;
+    }
+
+    sc2::Point2D position_;
+    const float distance_;
 };
 
 struct HasAttribute {
@@ -78,17 +105,6 @@ struct TargetableBy {
     sc2::Weapon::TargetType targetType_ = sc2::Weapon::TargetType::Invalid;
 };
 
-struct TargetableWithAttribute {
-    TargetableWithAttribute(const TargetableBy &targetableBy, HasAttribute hasAttribute)
-            : hasAttribute_(std::move(hasAttribute)),
-              isAttackable_(targetableBy) {}
-
-    bool operator()(const sc2::Unit &unit) { return hasAttribute_(unit) && isAttackable_(unit); }
-
-private:
-    HasAttribute hasAttribute_;
-    TargetableBy isAttackable_;
-};
 
 // Ignores Overlords, workers, and structures
 struct IsArmy {

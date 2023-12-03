@@ -106,8 +106,15 @@ private:
 
     void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
 
-    bool
-    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+    bool GetRandomUnit(const Unit*& unit_out, const ObservationInterface* observation, UnitTypeID unit_type);
+
+    bool DetectRush(Race enemyRace);
+
+    void OnRushDetected(Race enemyRace);
+
+    int DetermineThreshold(const ObservationInterface &observation);
+    
+    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -119,8 +126,7 @@ private:
 
     bool TryExpand(AbilityID build_ability, UnitTypeID worker_type);
 
-    bool
-    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
+    bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
 
     bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag);
 

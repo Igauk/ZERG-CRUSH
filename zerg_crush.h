@@ -11,6 +11,8 @@
 #include "army_comp.h"
 #include "attack.h"
 #include "filters.h"
+#include "positions.h"
+#include "ray_cast.h"
 
 using namespace sc2;
 
@@ -23,6 +25,10 @@ public:
     bool TryBuildAddOn(AbilityID ability_type_for_structure, uint64_t base_structure);
 
     bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);
+
+    bool TryBuildWallPiece(sc2::UnitTypeID piece);
+
+    void RayCastWithUnit(const Unit* unit, const ObservationInterface &observation);
 
     void BuildArmy();
 

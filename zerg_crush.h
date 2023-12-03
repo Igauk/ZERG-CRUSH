@@ -12,6 +12,8 @@
 #include "attack.h"
 #include "filters.h"
 
+static const float SQUADRON_CLUSTER_DISTANCE = 5.0f;
+static const float ARMY_CLUSTER_DISTANCE = 2 * SQUADRON_CLUSTER_DISTANCE;
 using namespace sc2;
 
 class ZergCrush : public Agent {
@@ -20,9 +22,12 @@ public:
 
     bool TryBuildSupplyDepot();
 
-    bool TryBuildAddOn(AbilityID ability_type_for_structure, uint64_t base_structure);
+    /**
+     * Builds unit from a specific base structure
+     */
+    bool TryBuildFrom(AbilityID abilityId, Tag baseStructure);
 
-    bool TryBuildStructureRandom(AbilityID ability_type_for_structure, UnitTypeID unit_type);
+    bool TryBuildStructureRandom(AbilityID abilityTypeForStructure, UnitTypeID unitType);
 
     void BuildArmy();
 
@@ -36,13 +41,13 @@ public:
 
     void OnStep() final;
 
-    void OnUnitIdle(const Unit* unit) override;
+    void OnUnitIdle(const Unit *unit) override;
 
     void OnGameEnd() final;
 
     void OnGameStart() final;
 
-    void OnUnitCreated(const sc2::Unit* unit) final;
+    void OnUnitCreated(const sc2::Unit *unit) final;
 
     void OnUnitDestroyed(const Unit *) final;
 
@@ -123,6 +128,25 @@ private:
     void TryCallDownMule();
 
     int GetExpectedWorkers();
+
+    /**
+     * Finds a point within the close and far radius to a given location
+     * @param location Base location
+     * @param closeRadius Point will at least be this radius from the base location
+     * @param farRadius Point will be within this radius of the base location
+     * @return
+     */
+    static Point2D getRandomLocationBy(Point2D location, float farRadius, float closeRadius = 0.0f);
+
+    void ScoutWithUnits(const sc2::ObservationInterface *observation, const sc2::Units &units,
+                        float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
+
+    void clusterUnits(const Units &units, float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
+
+    static std::vector<std::pair<Point3D, std::vector<Unit>>> getClusters(const Units &units,
+                                                                          float clusterDistance,
+                                                                          size_t clusterMinSize = 1,
+                                                                          size_t clusterMaxSize = std::numeric_limits<size_t>::max());
 };
 
 #endif

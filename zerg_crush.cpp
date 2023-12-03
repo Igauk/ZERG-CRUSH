@@ -7,6 +7,11 @@ void ZergCrush::OnStep() {
     const int framesToSkip = 4;
 
     if (observation->GetGameLoop() % framesToSkip != 0) {
+        //do we want to call this everytime, or only if we detect enemies approaching?
+        if(DetectRush(enemyRace)) {OnRushDetected(enemyRace);}
+
+        
+        //pass rush as a bool to ManageArmy()?
         ManageArmy();
         return;
     }
@@ -92,27 +97,123 @@ bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
     if (piece == UNIT_TYPEID::TERRAN_BARRACKS) {
         //check if its the first or second barrack
         if (Query()->Placement(ABILITY_ID::BUILD_BARRACKS, map_postions[2][index])) {
-            std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
+            //std::cout << "building barrack 2 at " << map_postions[2][index].x << std::endl;
             return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[2][closest_ramp], false);
         }
         else {
-            std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
+            //std::cout << "building barrack 1 at " << map_postions[1][index].x << std::endl;
             return TryBuildStructure(ABILITY_ID::BUILD_BARRACKS, UNIT_TYPEID::TERRAN_SCV, map_postions[1][closest_ramp], false);
         }
     }
     //supply depot
     else {
-        std::cout << "building depot " << map_postions[1][index].x << std::endl;
+        //std::cout << "building depot " << map_postions[1][index].x << std::endl;
         return TryBuildStructure(ABILITY_ID::BUILD_SUPPLYDEPOT, UNIT_TYPEID::TERRAN_SCV, map_postions[0][closest_ramp], false);
+        
         }
 
 }
 
+bool ZergCrush::DetectRush(Race enemyRace) {
+    const ObservationInterface *observation = Observation();
+    int threshold = DetermineThreshold(*observation);
+    Units enemy_units = observation->GetUnits(Unit::Enemy);
+
+    return enemy_units.size() > threshold;
+
+    //different conditions for different matchups?
+    /*
+    switch(enemyRace) {
+        case Terran: {
+            break;
+        }
+        case Zerg: {
+            break;
+        }
+        case Protoss: {
+            break;
+        }
+        default:
+            break;
+
+    }
+    */
+
+}
+
+int ZergCrush::DetermineThreshold(const ObservationInterface &observation) {
+    //how to determine?
+    /*
+    -size of our army/goal size
+    -time in game
+    -supply cap
+    */
+   std::vector<ArmySquadron *> armies = armyComposition->getAllSquadrons();
+   int largest_army = armies[0]->getSquadron().size();
+
+   for (const auto &army : armies) {
+        int army_size = army->getSquadron().size();
+        if (army_size > largest_army) {largest_army = army_size;}
+   }
+   return std::max(10, largest_army);
+
+}
+
+void ZergCrush::OnRushDetected(Race enemyRace) {
+    std::cout << "RUSH DETECTED" << std::endl;
+    const ObservationInterface *observation = Observation();
+
+    //raise all supply depots
+    Units supply_depots = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT));
+    for (const auto &depot : supply_depots) {
+        Actions()->UnitCommand(depot, ABILITY_ID::MORPH_SUPPLYDEPOT_RAISE);
+    }
+
+    //priorities: repair the bases and the wall
+    Units bases = observation->GetUnits(Unit::Self, IsTownHall());
+    for(const auto &base : bases) {
+        if(base->health < (base->health_max) * 0.75) {
+            const Unit* random_SCV; 
+            GetRandomUnit(random_SCV, observation, UNIT_TYPEID::TERRAN_SCV);
+            Actions()->UnitCommand(random_SCV, ABILITY_ID::EFFECT_REPAIR_SCV);
+        }
+    }
+
+
+    
+
+
+    //idk what we should do
+    switch(enemyRace) {
+        case Terran: {
+            break;
+        }
+        case Zerg: {
+            break;
+        }
+        case Protoss: {
+            break;
+        }
+        default:
+            break;
+
+    }
+
+
+}
 
 void ZergCrush::ManageMacro() {
     auto observation = Observation();
     auto structures = buildOrder->structuresToBuild(observation);
-    static int num = 1;
+
+    Units supply_depots = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT));
+    //skip over this if we are being attacked
+    if(!DetectRush(enemyRace)) {
+        for (const auto& supply_depot : supply_depots) {
+            Actions()->UnitCommand(supply_depot, ABILITY_ID::MORPH_SUPPLYDEPOT_LOWER);
+        }
+    }
+
     for (const auto &structure: structures) {
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
@@ -140,6 +241,15 @@ void ZergCrush::ManageMacro() {
                 }
                 break;
             }
+            case UNIT_TYPEID::TERRAN_BUNKER: {
+                //possible bunker locations:
+                /*
+                -near the starting base
+                -on the bottom of the ramp
+                */
+               break;
+            }
+            
             default:
                 if (structure->isAddOn()) {
                     const Unit *baseStruct = structure->getBaseStruct(observation);
@@ -383,6 +493,17 @@ const Unit *ZergCrush::FindNearestMineralPatch(const Point2D &start) {
                                  return Distance2D(start, mineralFieldA->pos) < Distance2D(start, mineralFieldB->pos);
                              });
 }
+
+//From MultiplayerBot, gets a random unit of a certain type
+bool ZergCrush::GetRandomUnit(const Unit*& unit_out, const ObservationInterface* observation, UnitTypeID unit_type) {
+    Units my_units = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit_type));
+    if (!my_units.empty()) {
+        unit_out = GetRandomEntry(my_units);
+        return true;
+    }
+    return false;
+}
+
 
 // TODO: Copied from MultiplayerBot An estimate of how many workers we should have based on what buildings we have
 int ZergCrush::GetExpectedWorkers() {
@@ -772,6 +893,7 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 21, UNIT_TYPEID::TERRAN_BUNKER),
             BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_COMMANDCENTER),

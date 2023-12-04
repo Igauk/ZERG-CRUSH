@@ -17,6 +17,19 @@ struct CombinedFilter {
     }
 };
 
+struct NotUnits {
+    explicit NotUnits(const std::vector<sc2::UNIT_TYPEID>& types_): types_(std::move(types_)) {};
+
+    bool operator()(const sc2::Unit& unit_) const {
+        for (const auto &type: types_) {
+            if (unit_.unit_type == type)
+                return false;
+        }
+        return true;
+    }
+    const std::vector<sc2::UNIT_TYPEID> types_;
+};
+
 
 struct IsFlying {
     bool operator()(const sc2::Unit &unit) {

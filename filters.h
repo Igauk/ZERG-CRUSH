@@ -64,7 +64,7 @@ struct TargetableBy {
         for (const auto &weapon: weapons) {
             switch (weapon.type) {
                 case sc2::Weapon::TargetType::Ground:
-                    switch (weapon.type) {
+                    switch (targetType_) {
                         case sc2::Weapon::TargetType::Air:
                         case sc2::Weapon::TargetType::Any:
                             targetType_ = sc2::Weapon::TargetType::Any;
@@ -74,7 +74,7 @@ struct TargetableBy {
                     };
                     break;
                 case sc2::Weapon::TargetType::Air:
-                    switch (weapon.type) {
+                    switch (targetType_) {
                         case sc2::Weapon::TargetType::Ground:
                         case sc2::Weapon::TargetType::Any:
                             targetType_ = sc2::Weapon::TargetType::Any;

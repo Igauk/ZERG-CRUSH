@@ -67,8 +67,8 @@ struct Positions
     };
     // Turrent behind wall.
     const std::vector<sc2::Point2D> TURRET_POSITIONS_BELSHIR = {
-        sc2::Point2D(41, 134),
-        sc2::Point2D(105, 26),
+        sc2::Point2D(40, 136),
+        sc2::Point2D(104, 24),
     };
 
     // Leftmost barracks position.
@@ -96,6 +96,7 @@ struct Positions
     SUPPLY_DEPOT_POSITIONS_CACTUS,
     BARRACKS_POSITIONS1_CACTUS,
     BARRACKS_POSITIONS2_CACTUS,
+    TURRET_POSITIONS_CACTUS 
 
     };
     std::array<std::vector<sc2::Point2D>, 4> belshir_postions = {

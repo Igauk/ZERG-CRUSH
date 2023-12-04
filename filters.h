@@ -72,7 +72,6 @@ struct TargetableBy {
                         case sc2::Weapon::TargetType::Ground:
                             break;
                     };
-                    break;
                 case sc2::Weapon::TargetType::Air:
                     switch (weapon.type) {
                         case sc2::Weapon::TargetType::Ground:
@@ -82,10 +81,8 @@ struct TargetableBy {
                         case sc2::Weapon::TargetType::Air:
                             break;
                     };
-                    break;
                 case sc2::Weapon::TargetType::Any:
                     targetType_ = sc2::Weapon::TargetType::Any;
-                    break;
                 case sc2::Weapon::TargetType::Invalid:
                     break;
             }

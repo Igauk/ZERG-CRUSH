@@ -22,8 +22,7 @@ struct Point2DComparator {
     }
 };
 
-static const float SQUADRON_CLUSTER_DISTANCE = 5.0f;
-static const float ARMY_CLUSTER_DISTANCE = 2 * SQUADRON_CLUSTER_DISTANCE;
+static const float SQUADRON_CLUSTER_DISTANCE = 7.5f;
 using namespace sc2;
 
 class ZergCrush : public Agent {
@@ -134,7 +133,7 @@ private:
 
     bool TryBuildGas(AbilityID build_ability, UnitTypeID worker_type, Point2D base_location);
 
-    bool TryExpand(AbilityID build_ability, UnitTypeID worker_type);
+    bool TryExpand(AbilityID buildAbility, UnitTypeID workerType);
 
     bool
     TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false);
@@ -178,6 +177,10 @@ private:
     void markOffScoutedLocations(const Point3D &scoutLocation);
 
     void setAssumedEnemyStartingLocation(const Point3D &clusterPosition);
+
+    void LowerSupplyDepotsNear(const Point3D &location = {0, 0, 0}, float distance = std::numeric_limits<float>::max());
+
+    void RaiseAllSupplyDepots();
 };
 
 #endif

@@ -5,11 +5,17 @@ using namespace sc2;
 void ZergCrush::OnStep() {
     const ObservationInterface *observation = Observation();
     const int framesToSkip = 4;
+    const int supplyDepotRaiseFramesToSkip = 500;
+
+    if (observation->GetGameLoop() % supplyDepotRaiseFramesToSkip == 0) {
+        RaiseAllSupplyDepots();
+    }
 
     if (observation->GetGameLoop() % framesToSkip != 0) {
         ManageArmy();
         return;
     }
+    
     ManageMacro();
     ManageUpgrades();
     if (TryBuildSCV()) return;
@@ -115,7 +121,6 @@ bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
 void ZergCrush::ManageMacro() {
     auto observation = Observation();
     auto structures = buildOrder->structuresToBuild(observation);
-    static int num = 1;
     for (const auto &structure: structures) {
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
@@ -201,8 +206,8 @@ void ZergCrush::ManageArmy() {
     }
 
     std::vector<ArmySquadron *> main = armyComposition->getSquadronsByType(allSquadrons, MAIN);
-    Units enemiesNearBase = observation->GetUnits(Unit::Alliance::Enemy, CombinedFilter<IsVisible, WithinDistanceOf>(
-            IsVisible(), WithinDistanceOf(baseRallyPoint, 30.0f))); // enemies at base
+    Units enemiesNearBase = observation->GetUnits(Unit::Alliance::Enemy, CombinedFilter({
+            IsVisible(), WithinDistanceOf(baseRallyPoint, 30.0f)})); // enemies at base
 
     if (waitUntilSupply >= observation->GetArmyCount()) {
         for (auto &mainSquadron: main) {
@@ -227,7 +232,7 @@ void ZergCrush::ManageArmy() {
             auto squadron = mainSquadron->getSquadron();
             mainArmyUnits.insert(mainArmyUnits.end(), squadron.begin(), squadron.end());
         }
-        ScoutWithUnits(observation, mainArmyUnits, ARMY_CLUSTER_DISTANCE);
+        ScoutWithUnits(observation, mainArmyUnits, SQUADRON_CLUSTER_DISTANCE);
     }
 }
 
@@ -243,9 +248,10 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
         const Unit *clusterLeader = &(clusterUnits.front());
 
         sc2::Units attackableEnemies = observation->GetUnits(sc2::Unit::Alliance::Enemy,
-                CombinedFilter<TargetableBy, WithinDistanceOf>(
+                CombinedFilter({
                         TargetableBy(observation, clusterLeader),
-                        WithinDistanceOf(clusterLeader, std::max(MicroInformation(observation, clusterLeader).range * 2, 15.0f))));
+                        WithinDistanceOf(clusterLeader, std::max(MicroInformation(observation, clusterLeader).range * 2, 15.0f))}));
+
 
         if (!attackableEnemies.empty()) {
             // We can set an assumed starting location here, since we are being attacked
@@ -306,6 +312,8 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
     auto unitLocation = scoutingUnitClusters.front().first;
     markOffScoutedLocations(unitLocation);
 
+    LowerSupplyDepotsNear(unitLocation, SQUADRON_CLUSTER_DISTANCE*2); // Make sure our army can get through
+
     if (assumedEnemyStartingLocation != nullptr) {
         if (expansionMap.count(*assumedEnemyStartingLocation) > 0) { // We haven't discounted this location yet
             Actions()->UnitCommand(scoutingUnits, ABILITY_ID::MOVE_MOVEPATROL, expansionMap[*assumedEnemyStartingLocation].front());
@@ -326,6 +334,20 @@ void ZergCrush::setAssumedEnemyStartingLocation(const Point3D &scoutLocation) {
             if (Distance2D(scoutLocation, location) < 30.0f && expansionMap.count(location) > 0) {
                 assumedEnemyStartingLocation = &location;
             }
+        }
+    }
+}
+
+void ZergCrush::RaiseAllSupplyDepots() {
+    for (auto& supplyDepot: Observation()->GetUnits(IsUnit(sc2::UNIT_TYPEID::TERRAN_SUPPLYDEPOTLOWERED))) {
+        Actions()->UnitCommand(supplyDepot, ABILITY_ID::MORPH_SUPPLYDEPOT_RAISE);
+    }
+}
+
+void ZergCrush::LowerSupplyDepotsNear(const Point3D &location, float distance) {
+    for (auto &supplyDepot: Observation()->GetUnits(IsUnit(sc2::UNIT_TYPEID::TERRAN_SUPPLYDEPOT))) {
+        if (Distance2D(location, location) < distance) {
+            Actions()->UnitCommand(supplyDepot, ABILITY_ID::MORPH_SUPPLYDEPOT_LOWER);
         }
     }
 }
@@ -594,30 +616,29 @@ bool ZergCrush::TryBuildStructureUnit(AbilityID ability_type_for_structure, cons
 }
 
 // TODO: Copied from MultiplayerBot Expands to nearest location and updates the start location to be between the new location and old bases.
-bool ZergCrush::TryExpand(AbilityID build_ability, UnitTypeID worker_type) {
+bool ZergCrush::TryExpand(AbilityID buildAbility, UnitTypeID workerType) {
     const ObservationInterface *observation = Observation();
-    float minimum_distance = std::numeric_limits<float>::max();
-    Point3D closest_expansion;
-    for (const auto &expansion: expansionLocations) {
-        float current_distance = Distance2D(startingLocation, expansion);
-        if (current_distance < .01f) {
-            continue;
-        }
+    float minimumDistance = std::numeric_limits<float>::max();
+    Point3D closestExpansion;
+    for (const auto &expansion: expansionMap[startingLocation]) {
+        float currentDistance = Distance2D(startingLocation, expansion);
+        if (currentDistance < .01f) continue; // is starting location
 
-        if (current_distance < minimum_distance) {
-            if (Query()->Placement(build_ability, expansion)) {
-                closest_expansion = expansion;
-                minimum_distance = current_distance;
+        if (currentDistance < minimumDistance) {
+            if (Query()->Placement(buildAbility, expansion)) {
+                closestExpansion = expansion;
+                minimumDistance = currentDistance;
             }
         }
     }
-    //only update staging location up till 3 bases.
-    if (TryBuildStructure(build_ability, worker_type, closest_expansion, true) &&
+
+    LowerSupplyDepotsNear(); // Lower supply depots while we go build the command center
+    if (TryBuildStructure(buildAbility, workerType, closestExpansion, true) &&
         observation->GetUnits(Unit::Self, IsTownHall()).size() < 4) {
         // TODO: Update this rally point
-        baseRallyPoint = Point3D(((baseRallyPoint.x + closest_expansion.x) / 2),
-                                 ((baseRallyPoint.y + closest_expansion.y) / 2),
-                                 ((baseRallyPoint.z + closest_expansion.z) / 2));
+        baseRallyPoint = Point3D(((baseRallyPoint.x + closestExpansion.x) / 2),
+                                 ((baseRallyPoint.y + closestExpansion.y) / 2),
+                                 ((baseRallyPoint.z + closestExpansion.z) / 2));
         return true;
     }
     return false;

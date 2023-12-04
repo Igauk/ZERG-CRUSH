@@ -14,7 +14,7 @@ struct Positions
 {   
     Maps getMap(const sc2::ObservationInterface* &observation) {
         sc2::GameInfo info = observation->GetGameInfo();
-        std::cout << info.map_name << std::endl;
+        //std::cout << info.map_name << std::endl;
         if (info.map_name.find("Cactus") != std::string::npos) {
             return CACTUS;
         }
@@ -96,7 +96,7 @@ struct Positions
     SUPPLY_DEPOT_POSITIONS_CACTUS,
     BARRACKS_POSITIONS1_CACTUS,
     BARRACKS_POSITIONS2_CACTUS,
-    TURRET_POSITIONS_CACTUS
+
     };
     std::array<std::vector<sc2::Point2D>, 4> belshir_postions = {
         SUPPLY_DEPOT_POSITIONS_BELSHIR,

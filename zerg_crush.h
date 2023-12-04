@@ -14,6 +14,14 @@
 #include "positions.h"
 #include "ray_cast.h"
 
+struct Point2DComparator {
+    bool operator()(const sc2::Point2D& lhs, const sc2::Point2D& rhs) const {
+        if (lhs.x < rhs.x) return true;
+        if (lhs.x > rhs.x) return false;
+        return lhs.y < rhs.y;
+    }
+};
+
 static const float SQUADRON_CLUSTER_DISTANCE = 5.0f;
 static const float ARMY_CLUSTER_DISTANCE = 2 * SQUADRON_CLUSTER_DISTANCE;
 using namespace sc2;
@@ -74,14 +82,20 @@ private:
     const uint32_t MAX_WORKER_COUNT = 70;
 
     /**
-     * Queried at the start of the game, represents potential expansion locations on the map
+     * Queried at the start of the game, represents potential expansion locations for each starting location
+     */
+    std::map<const Point2D, std::vector<Point3D>, Point2DComparator> expansionMap = {};
+
+    /**
+     * Queried at the start of the game, represents potential expansion locations
      */
     std::vector<Point3D> expansionLocations = {};
+
 
     /**
      * Queried at the start of the game, represents the starting location of the enemy
      */
-    Point2D enemyStartingLocation;
+    std::vector<Point2D> enemyStartingLocations;
 
     /**
      * Queried at the start of the game, represents our starting location on the map
@@ -104,8 +118,6 @@ private:
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
-
     bool
     TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
@@ -120,7 +132,7 @@ private:
     bool TryExpand(AbilityID build_ability, UnitTypeID worker_type);
 
     bool
-    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
+    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false);
 
     bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag);
 
@@ -153,6 +165,10 @@ private:
                                                                           float clusterDistance,
                                                                           size_t clusterMinSize = 1,
                                                                           size_t clusterMaxSize = std::numeric_limits<size_t>::max());
+
+    void setEnemyExpansionLocations();
+
+    void sortEnemyExpansionLocations();
 };
 
 #endif

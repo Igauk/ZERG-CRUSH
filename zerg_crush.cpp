@@ -234,10 +234,39 @@ void ZergCrush::ManageArmy() {
 void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, const sc2::Units &units,
                                float clusterDistance) {
     if (units.empty()) return;
-    sc2::Units scoutingUnits = Units(units);
-    int minClusterSize = (int) units.size() / 4;
 
-    auto clusters = getClusters(units, clusterDistance); // unit clusters
+    sc2::Units scoutingUnits = Units(units);
+    auto clusters = getClusters(units, clusterDistance);
+
+    for (const auto &cluster: clusters) {
+        auto clusterUnits = cluster.second;
+        const Unit *clusterLeader = &(clusterUnits.front());
+
+        sc2::Units attackableEnemies = observation->GetUnits(sc2::Unit::Alliance::Enemy,
+                CombinedFilter<TargetableBy, WithinDistanceOf>(
+                        TargetableBy(observation, clusterLeader),
+                        WithinDistanceOf(clusterLeader, std::max(MicroInformation(observation, clusterLeader).range * 2, 15.0f))));
+
+        if (!attackableEnemies.empty()) {
+            // We can set an assumed starting location here, since we are being attacked
+            setAssumedEnemyStartingLocation(cluster.first);
+
+            // Remove the units in this from the main scouting group
+            scoutingUnits.erase(std::remove_if(scoutingUnits.begin(), scoutingUnits.end(), [&](const auto& smallClusterUnit) {
+                return std::any_of(cluster.second.begin(), cluster.second.end(), [&](const auto& unit) {
+                    return unit.tag == smallClusterUnit->tag;
+                });
+            }), scoutingUnits.end());
+
+            // And attack with these units
+            for (const auto &unit: cluster.second) {
+                attackMicro->microUnit(observation, &unit);
+            }
+        }
+    }
+
+    // Set the largest cluster size to send smaller clusters to
+    int minClusterSize = (int) units.size() / 4;
     size_t largestClusterSize = minClusterSize;
     Point3D largestClusterPosition = baseRallyPoint;
     for (const auto &cluster: clusters) {
@@ -245,42 +274,27 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
             largestClusterSize = cluster.second.size();
             largestClusterPosition = cluster.first;
         }
-        auto clusterUnits = cluster.second;
-        const Unit *clusterLeader = &(clusterUnits.front());
-
-        sc2::Units attackableEnemies = observation->GetUnits(
-                sc2::Unit::Alliance::Enemy,
-                CombinedFilter<TargetableBy, WithinDistanceOf>(
-                        TargetableBy(observation, clusterLeader),
-                        WithinDistanceOf(clusterLeader, MicroInformation(observation, clusterLeader).range * 2))
-        );
-        if (!attackableEnemies.empty()) {
-            for (const auto &unit: clusterUnits) {
-                attackMicro->microUnit(observation, &unit);
-                auto unitIter = std::find_if(scoutingUnits.begin(), scoutingUnits.end(),
-                                             [unit](const auto &notInBattle) {
-                                                 return unit.tag == notInBattle->tag;
-                                             });
-                if (unitIter != scoutingUnits.end()) scoutingUnits.erase(unitIter);
-            }
-        }
     }
 
-    // Send small clusters towards main army...
+    // Now, outside the clusters that are being attacked, remove small clusters and send them towards the main army
     auto smallClusters = getClusters(scoutingUnits, clusterDistance, 1, minClusterSize);
     for (const auto &cluster: smallClusters) {
+
+        // Remove these small clusters from the main scouting group
+        scoutingUnits.erase(std::remove_if(scoutingUnits.begin(), scoutingUnits.end(), [&](const auto& smallClusterUnit) {
+            return std::any_of(cluster.second.begin(), cluster.second.end(), [&](const auto& unit) {
+                return unit.tag == smallClusterUnit->tag;
+            });
+        }), scoutingUnits.end());
+
+        // Send small clusters towards main army
         for (const auto &unit: cluster.second) {
             Actions()->UnitCommand(&unit, ABILITY_ID::SMART, largestClusterPosition);
-            auto unitIter = std::find_if(scoutingUnits.begin(), scoutingUnits.end(),
-                                         [unit](const auto &smallClusterUnit) {
-                                             return unit.tag == smallClusterUnit->tag;
-                                         });
-            if (unitIter != scoutingUnits.end()) scoutingUnits.erase(unitIter);
         }
     }
 
-    auto scoutingUnitClusters = getClusters(scoutingUnits, clusterDistance,
-                                            minClusterSize - 1); // Ignore small clusters
+    // Ignore small clusters, they are heading towards the main cluster
+    auto scoutingUnitClusters = getClusters(scoutingUnits, clusterDistance, minClusterSize - 1);
     if (scoutingUnitClusters.size() > 1) {
         clusterUnits(scoutingUnits, clusterDistance);
         return;
@@ -288,12 +302,38 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
 
     if (scoutingUnits.empty()) return;
 
+    // Now we can do some scouting with the remaining units that are not in battle and are clustered
     auto unitLocation = scoutingUnitClusters.front().first;
+    markOffScoutedLocations(unitLocation);
+
+    if (assumedEnemyStartingLocation != nullptr) {
+        if (expansionMap.count(*assumedEnemyStartingLocation) > 0) { // We haven't discounted this location yet
+            Actions()->UnitCommand(scoutingUnits, ABILITY_ID::MOVE_MOVEPATROL, expansionMap[*assumedEnemyStartingLocation].front());
+        }
+        return;
+    }
+
+    for (auto &location: enemyStartingLocations) {
+        if (expansionMap.count(location) > 0) { // We haven't discounted this location yet
+            Actions()->UnitCommand(scoutingUnits, ABILITY_ID::MOVE_MOVEPATROL, expansionMap[location].front());
+        }
+    }
+}
+
+void ZergCrush::setAssumedEnemyStartingLocation(const Point3D &scoutLocation) {
+    if (assumedEnemyStartingLocation == nullptr) {
+        for (auto &location: enemyStartingLocations) {
+            if (Distance2D(scoutLocation, location) < 30.0f && expansionMap.count(location) > 0) {
+                assumedEnemyStartingLocation = &location;
+            }
+        }
+    }
+}
+
+void ZergCrush::markOffScoutedLocations(const Point3D &scoutLocation) {
     for (auto &location: enemyStartingLocations) {
         // These units are definitely not in battle - so no enemies at this location
-        if (Distance2D(unitLocation, location) < 5.0f && expansionMap.count(location) > 0) {
-            // TODO: we may need to in case it is empty -> Reset the locations
-            // TODO: When we spot an enemy then mark this as the enemy starting location
+        if (Distance2D(scoutLocation, location) < 5.0f && expansionMap.count(location) > 0) {
             expansionMap.erase(location);// Do not scout this expansion anymore ...
             continue;
         }
@@ -301,15 +341,9 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
         // Otherwise lets check if we are by any of its expansions and remove any that we are near
         if (expansionMap.count(location) > 0) {
             auto& expansions = expansionMap[location];
-            expansions.erase(std::remove_if(expansions.begin(), expansions.end(), [unitLocation](const auto &expansion) {
-                return Distance2D(unitLocation, expansion) < 5.0f;
+            expansions.erase(std::remove_if(expansions.begin(), expansions.end(), [scoutLocation](const auto &expansion) {
+                return Distance2D(scoutLocation, expansion) < 5.0f;
             }), expansions.end());
-        }
-    }
-
-    for (auto &location: enemyStartingLocations) {
-        if (expansionMap.count(location) > 0) { // We haven't discounted this location yet
-            Actions()->UnitCommand(scoutingUnits, ABILITY_ID::MOVE_MOVEPATROL, expansionMap[location].front());
         }
     }
 }
@@ -837,9 +871,9 @@ void ZergCrush::OnGameStart() {
     };
 
     std::vector<ArmySquadron *> tvzArmyComposition = {
-            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SCV, UNIT_TYPEID::TERRAN_BARRACKS, {
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SCV, UNIT_TYPEID::TERRAN_COMMANDCENTER, {
                     {IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT), 1, 1},
-            }, SCOUT),
+            }, SCOUT, false), // Scouting SCV
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1,        4},
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 20},

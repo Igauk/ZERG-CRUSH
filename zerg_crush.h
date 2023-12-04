@@ -98,6 +98,11 @@ private:
     std::vector<Point2D> enemyStartingLocations;
 
     /**
+     * Where we think the enemy is, prioritize going here when scouting
+     */
+    Point2D* assumedEnemyStartingLocation = nullptr;
+
+    /**
      * Queried at the start of the game, represents our starting location on the map
      */
     Point3D startingLocation;
@@ -169,6 +174,10 @@ private:
     void setEnemyExpansionLocations();
 
     void sortEnemyExpansionLocations();
+
+    void markOffScoutedLocations(const Point3D &scoutLocation);
+
+    void setAssumedEnemyStartingLocation(const Point3D &clusterPosition);
 };
 
 #endif

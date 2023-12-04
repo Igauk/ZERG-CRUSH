@@ -7,7 +7,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/BasicSc2Bot",
-            "args": ["-c", "-a", "zerg", "-d", "Hard", "-m", "BelShirVestigeLE.SC2Map"],
+            "args": ["-c", "-a", "zerg", "-d", "Hard", "-m", "CactusValleyLE.SC2Map"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
             "environment": [],

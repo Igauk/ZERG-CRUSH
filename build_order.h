@@ -252,7 +252,7 @@ public:
         }
     }
 
-    void onBuildingFinished(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+    void OnBuildingFinished(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         sc2::Tag builtTag = unit->tag;
         auto buildingIter = std::find_if(structures.begin(), structures.end(), [builtTag](auto const &building) {
             return building.getTag() == builtTag;

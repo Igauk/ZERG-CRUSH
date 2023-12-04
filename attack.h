@@ -99,14 +99,23 @@ private:
     void attackWeakest(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         auto microInfo = MicroInformation(observation, unit);
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
-        auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter<TargetableBy, HasAttribute>(
-                targetableByUnit, HasAttribute(observation, microInfo.strongAgainst)));
-        if (getClosestDistanceTo(weakEnemies, unit) <= microInfo.range) { // TODO: with least health
+        float attackRange = std::max(microInfo.range * 2, 5.0f);
+        const auto inRange = WithinDistanceOf(unit, attackRange);
+        auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
+                inRange,
+                targetableByUnit,
+                HasAttribute(observation, microInfo.strongAgainst),
+                IsDangerous(observation, 5.0f),
+                }));
+
+        // TODO: try with least health
+        if (getClosestDistanceTo(weakEnemies, unit) <= attackRange) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
             return;
         }
-        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter<WithinDistanceOf, TargetableBy>(WithinDistanceOf(unit, 30.0f), targetableByUnit));
-        if (getClosestDistanceTo(allEnemies, unit) <= microInfo.range) {
+
+        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit}));
+        if (getClosestDistanceTo(allEnemies, unit) <= attackRange) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
             return;
         } else if (!allEnemies.empty()) {

@@ -122,8 +122,7 @@ private:
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    bool
-    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -163,7 +162,7 @@ private:
     void ScoutWithUnits(const sc2::ObservationInterface *observation, const sc2::Units &units,
                         float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
 
-    void clusterUnits(const Units &units, float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
+    void clusterUnits(const Units &cluster, float distance = SQUADRON_CLUSTER_DISTANCE);
 
     static std::vector<std::pair<Point3D, std::vector<Unit>>> getClusters(const Units &units,
                                                                           float clusterDistance,

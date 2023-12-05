@@ -69,7 +69,7 @@ public:
     /**
      * Sets the number of units that we want at any given moment
      */
-    void setGoalCount(const sc2::ObservationInterface *observation) {
+    void setGoalCount(const sc2::ObservationInterface *observation, bool ratio = false) {
         for (const auto &condition: conditions) {
             if (observation->GetUnits(condition.alliance, condition.unitFilter).size() >=
                 condition.requiredAmountToTrigger) {

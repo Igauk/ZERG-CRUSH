@@ -11,6 +11,7 @@
 #include "army_comp.h"
 #include "attack.h"
 #include "filters.h"
+#include "upgrade_order.h"
 #include "positions.h"
 #include "ray_cast.h"
 
@@ -119,6 +120,7 @@ private:
     BuildOrder *buildOrder;
     ArmyComposition *armyComposition;
     ZergCrushMicro *attackMicro;
+    UpgradeOrder *upgradeOrder;
 
     void setEnemyRace(const ObservationInterface *observation);
 

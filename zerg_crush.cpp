@@ -989,41 +989,89 @@ void ZergCrush::OnGameStart() {
     attackMicro = new ZergCrushMicro(Actions());
 
     std::vector<BuildOrderStructure> tvtStructures = {
-            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
-            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS, true),
             BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 18, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 18, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 18, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_MISSILETURRET, true),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_MEDIVAC),
+            BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_HELLION),
+            BuildOrderStructure(observation, 38, UNIT_TYPEID::TERRAN_HELLION),
+            BuildOrderStructure(observation, 40, UNIT_TYPEID::TERRAN_HELLION),
+        
+            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_HELLION),
+            BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 42, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+        
+            BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 46, UNIT_TYPEID::TERRAN_SIEGETANK),
+            BuildOrderStructure(observation, 50, UNIT_TYPEID::TERRAN_MISSILETURRET, true),
+            BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_MARINE),
+            BuildOrderStructure(observation, 53, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 53, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 59, UNIT_TYPEID::TERRAN_SIEGETANK),
+            BuildOrderStructure(observation, 74, UNIT_TYPEID::TERRAN_MEDIVAC),
+            BuildOrderStructure(observation, 79, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+           
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 85, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 86, UNIT_TYPEID::TERRAN_SIEGETANK),
+            BuildOrderStructure(observation, 94, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+    
+            BuildOrderStructure(observation, 95, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 94, UNIT_TYPEID::TERRAN_SIEGETANK),
+            BuildOrderStructure(observation, 94, UNIT_TYPEID::TERRAN_MEDIVAC),
+            BuildOrderStructure(observation, 97, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 98, UNIT_TYPEID::TERRAN_MEDIVAC),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 108, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 115, UNIT_TYPEID::TERRAN_ARMORY),
+            BuildOrderStructure(observation, 115, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 116, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_SIEGETANK),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 136, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 140, UNIT_TYPEID::TERRAN_MARAUDER),
+            BuildOrderStructure(observation, 139, UNIT_TYPEID::TERRAN_MEDIVAC),
+            BuildOrderStructure(observation, 150, UNIT_TYPEID::TERRAN_SIEGETANK),
+       
+
     };
 
     std::vector<ArmySquadron *> tvtArmyComposition = {
-            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
+
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 5},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
                     {IsUnit(UNIT_TYPEID::TERRAN_REAPER), 1, 10},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 4},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 3},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 5},
             }),
     };
 

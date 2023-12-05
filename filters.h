@@ -7,15 +7,13 @@
 #ifndef FILTERS_H
 #define FILTERS_H
 
-template <typename Filter1, typename Filter2>
 struct CombinedFilter {
-    Filter1 filter1;
-    Filter2 filter2;
+    std::vector<sc2::Filter> filters;
 
-    CombinedFilter(Filter1 f1, Filter2 f2) : filter1(f1), filter2(f2) {}
+    explicit CombinedFilter(std::vector<sc2::Filter> filters) : filters(std::move(filters)) {}
 
     bool operator()(const sc2::Unit &unit) {
-        return filter1(unit) && filter2(unit);
+        return std::all_of(filters.begin(), filters.end(), [unit](auto& filter) {return filter(unit); });
     }
 };
 
@@ -24,6 +22,25 @@ struct IsFlying {
     bool operator()(const sc2::Unit &unit) {
         return unit.is_flying;
     }
+};
+
+struct IsDangerous {
+    explicit IsDangerous(const sc2::ObservationInterface *observation, float damageThreshold = 0.0f)
+            : observation_(observation),
+              damageThreshold_(damageThreshold) {};
+
+    bool operator()(const sc2::Unit &unit) {
+        auto weapons = observation_->GetUnitTypeData().at(unit.unit_type).weapons;
+        float maxDamage = 0.0f;
+        for (auto &weapon : weapons) {
+            maxDamage = std::max(maxDamage, weapon.damage_);
+        }
+        return maxDamage > damageThreshold_;
+    }
+
+    float damageThreshold_;
+    const sc2::ObservationInterface *observation_;
+
 };
 
 struct WithinDistanceOf {
@@ -47,6 +64,7 @@ struct HasAttribute {
               attributes_(std::move(attributes)) {}
 
     bool operator()(const sc2::Unit &unit) {
+        if (attributes_.empty()) return true; // Base case
         auto attributes = observation_->GetUnitTypeData().at(unit.unit_type).attributes;
         std::vector<sc2::Attribute> attributeIntersection;
         std::set_intersection(attributes.begin(), attributes.end(), attributes_.begin(), attributes_.end(),
@@ -64,25 +82,30 @@ struct TargetableBy {
         for (const auto &weapon: weapons) {
             switch (weapon.type) {
                 case sc2::Weapon::TargetType::Ground:
-                    switch (weapon.type) {
+                    switch (targetType_) {
                         case sc2::Weapon::TargetType::Air:
                         case sc2::Weapon::TargetType::Any:
                             targetType_ = sc2::Weapon::TargetType::Any;
                         case sc2::Weapon::TargetType::Invalid:
                         case sc2::Weapon::TargetType::Ground:
+                            targetType_ = sc2::Weapon::TargetType::Ground;
                             break;
                     };
+                    break;
                 case sc2::Weapon::TargetType::Air:
-                    switch (weapon.type) {
+                    switch (targetType_) {
                         case sc2::Weapon::TargetType::Ground:
                         case sc2::Weapon::TargetType::Any:
                             targetType_ = sc2::Weapon::TargetType::Any;
                         case sc2::Weapon::TargetType::Invalid:
                         case sc2::Weapon::TargetType::Air:
+                            targetType_ = sc2::Weapon::TargetType::Air;
                             break;
                     };
+                    break;
                 case sc2::Weapon::TargetType::Any:
                     targetType_ = sc2::Weapon::TargetType::Any;
+                    break;
                 case sc2::Weapon::TargetType::Invalid:
                     break;
             }

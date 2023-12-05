@@ -128,7 +128,7 @@ private:
         } else {
             auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({sc2::IsVisible(), targetableByUnit, notToTarget}));
             if (!allEnemies.empty()) {
-                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, allEnemies.front());
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
             }
         }
     }

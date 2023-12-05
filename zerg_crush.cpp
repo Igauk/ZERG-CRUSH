@@ -884,10 +884,12 @@ void ZergCrush::OnGameEnd() {
     std::cout << "Game Ended for: " << std::to_string(Control()->Proto().GetAssignedPort()) << std::endl;
 }
 
-// TODO: Command center is not being built on CactusLE
+// TODO: Second command center is not being built always
 // TODO: Siege tanks are getting stuck on CactusLE
 // TODO: Build order is bad -> do a rush, make more conditions
 // TODO: Supply depots still causing problems, wall causing problems
+// TODO: Some barracks not building
+// TODO: Defense units not attacking back -> check
 void ZergCrush::OnGameStart() {
     auto observation = Observation();
     enemyStartingLocations = observation->GetGameInfo().enemy_start_locations;

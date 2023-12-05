@@ -119,21 +119,14 @@ private:
     BuildOrder *buildOrder;
     ArmyComposition *armyComposition;
     ZergCrushMicro *attackMicro;
-    bool depots_raised = false;
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    void ScoutWithUnit(const sc2::ObservationInterface *observation, const sc2::Unit *unit);
-
-    bool GetRandomUnit(const Unit*& unit_out, const ObservationInterface* observation, UnitTypeID unit_type);
-
-    bool DetectRush(Race enemyRace);
-
-    void OnRushDetected(Race enemyRace);
-
-    int DetermineThreshold(const ObservationInterface &observation);
-    
     bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+=========
+    bool
+    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+>>>>>>>>> Temporary merge branch 2
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -145,9 +138,8 @@ private:
 
     bool TryExpand(AbilityID buildAbility, UnitTypeID workerType);
 
-    bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion);
-    
-    bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false);
+    bool
+    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false);
 
     bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag);
 
@@ -174,7 +166,7 @@ private:
     void ScoutWithUnits(const sc2::ObservationInterface *observation, const sc2::Units &units,
                         float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
 
-    void clusterUnits(const Units &units, float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
+    void clusterUnits(const Units &cluster, float distance = SQUADRON_CLUSTER_DISTANCE);
 
     static std::vector<std::pair<Point3D, std::vector<Unit>>> getClusters(const Units &units,
                                                                           float clusterDistance,

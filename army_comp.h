@@ -8,10 +8,18 @@
 
 // TODO: could maybe have a option such that this is taken as a TRUMP condition, need something to stop production
 struct SquadronBuildCondition {
-    SquadronBuildCondition(const sc2::Filter &unitFilter, uint32_t requiredAmountToTrigger, uint32_t unitResponse)
-            : unitFilter(unitFilter), requiredAmountToTrigger(requiredAmountToTrigger), unitResponse(unitResponse) {}
+    SquadronBuildCondition(const sc2::Filter &unitFilter,
+                           uint32_t requiredAmountToTrigger,
+                           uint32_t unitResponse,
+                           bool isRatio = false,
+                           bool antiCondition = false)
+            : unitFilter(unitFilter),
+              requiredAmountToTrigger(requiredAmountToTrigger),
+              unitResponse(unitResponse),
+              isRatio(isRatio),
+              trumpCondition(antiCondition) {}
 
-    SquadronBuildCondition(sc2::Filter unitFilter,
+    SquadronBuildCondition(const sc2::Filter& unitFilter,
                            uint32_t requiredAmountToTrigger,
                            uint32_t unitResponse,
                            sc2::Unit::Alliance alliance) :
@@ -19,19 +27,12 @@ struct SquadronBuildCondition {
         this->alliance = alliance;
     }
 
-    SquadronBuildCondition(sc2::Filter unitFilter,
-                           uint32_t requiredAmountToTrigger,
-                           uint32_t unitResponse,
-                           bool isRatio) : SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse) {
-        this->isRatio = isRatio;
-    }
-
-    SquadronBuildCondition(sc2::Filter unitFilter,
+    SquadronBuildCondition(const sc2::Filter& unitFilter,
                            uint32_t requiredAmountToTrigger,
                            uint32_t unitResponse,
                            sc2::Unit::Alliance alliance,
-                           bool isRatio) : SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse) {
-        this->isRatio = isRatio;
+                           bool isRatio,
+                           bool antiCondition) : SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse, isRatio, antiCondition) {
         this->alliance = alliance;
     }
 
@@ -54,11 +55,16 @@ struct SquadronBuildCondition {
      * The response in terms of the units we build
      */
     uint32_t unitResponse;
-    
+
     /**
      * Response is a ratio from the required amount to trigger
      */
     bool isRatio = false;
+
+    /**
+     * Trump condition to stop building this unit
+     */
+    bool trumpCondition;
 };
 
 
@@ -94,6 +100,13 @@ public:
      */
     void setGoalCount(const sc2::ObservationInterface *observation) {
         for (const auto &condition: conditions) {
+            if (condition.trumpCondition) {
+                int numTriggerUnits = (int) observation->GetUnits(condition.alliance, condition.unitFilter).size();
+                if (numTriggerUnits >= condition.requiredAmountToTrigger) {
+                    unitGoalCount = condition.unitResponse;
+                    break;
+                }
+            }
             if (condition.isRatio) {
                 int numTriggerUnits = (int) observation->GetUnits(condition.alliance, condition.unitFilter).size();
                 if (numTriggerUnits >= condition.requiredAmountToTrigger) {
@@ -107,13 +120,13 @@ public:
             };
         }
     }
-    
+
     bool shouldBuild(const sc2::ObservationInterface *observation) {
         checkSquadron(observation);
         bool haveEnoughResources = observation->GetMinerals() >= mineralCost && observation->GetVespene() >= vespeneCost;
         return needMore() && haveEnoughResources;
     }
-    
+
     void checkSquadron(const sc2::ObservationInterface *observation) {
         for (auto &unit: units) {
             auto updatedUnit = observation->GetUnit(unit->tag);
@@ -260,7 +273,7 @@ public:
             return squadron->needMore();
         });
     }
-    
+
 
     std::vector<ArmySquadron *> getSquadronsByType(std::vector<ArmySquadron *> &armySquadrons, ArmyType armyType) {
         return FilterSquadrons(armySquadrons, [armyType](ArmySquadron *&squadron) {

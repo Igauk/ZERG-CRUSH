@@ -11,6 +11,7 @@
 #include "army_comp.h"
 #include "attack.h"
 #include "filters.h"
+#include "upgrade_order.h"
 #include "positions.h"
 #include "ray_cast.h"
 
@@ -119,11 +120,11 @@ private:
     BuildOrder *buildOrder;
     ArmyComposition *armyComposition;
     ZergCrushMicro *attackMicro;
+    UpgradeOrder *upgradeOrder;
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    bool
-    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -163,7 +164,7 @@ private:
     void ScoutWithUnits(const sc2::ObservationInterface *observation, const sc2::Units &units,
                         float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
 
-    void clusterUnits(const Units &units, float clusterDistance = SQUADRON_CLUSTER_DISTANCE);
+    void clusterUnits(const Units &cluster, float distance = SQUADRON_CLUSTER_DISTANCE);
 
     static std::vector<std::pair<Point3D, std::vector<Unit>>> getClusters(const Units &units,
                                                                           float clusterDistance,

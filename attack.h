@@ -30,15 +30,16 @@ public:
         switch (unit->unit_type.ToType()) {
             case sc2::UNIT_TYPEID::TERRAN_MARINE:
                 handleMarineMicro(observation, unit);
+                break;
             case sc2::UNIT_TYPEID::TERRAN_MARAUDER:
                 handleMarauderMicro(observation, unit);
+                break;
             case sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED:
             case sc2::UNIT_TYPEID::TERRAN_SIEGETANK:
                 handleSiegeTankMicro(observation, unit);
-            case sc2::UNIT_TYPEID::TERRAN_REAPER:
-                attackWeakest(observation, unit);
-            default:
                 break;
+            default:
+                attackWeakest(observation, unit);
         }
     }
 
@@ -59,13 +60,7 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            if (unit->weapon_cooldown == 0) {
-                attackWeakest(observation, unit);
-            }
-            else {
-                sc2::GameInfo game;
-                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, game.start_locations.front());
-            }
+            attackWeakest(observation, unit);
         }
     }
 
@@ -73,18 +68,13 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            if (unit->weapon_cooldown == 0) {
-                attackWeakest(observation, unit);
-            }
-            else {
-                sc2::GameInfo game;
-                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, game.start_locations.front());
-            }
+            attackWeakest(observation, unit);
         }
     }
 
     void stimInRange(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         bool hasStimmed = false;
+        if (unit->health < unit->health_max / 2) return; // don't stim at low hp
         auto distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy), unit);
         for (const auto& buff : unit->buffs) {
             if (buff == sc2::BUFF_ID::STIMPACK) {
@@ -97,7 +87,7 @@ private:
     }
 
     void handleSiegeTankMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
-        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy), unit);
+        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy, sc2::IsVisible()), unit);
         if (distance > 13 && sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED == unit->unit_type) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_UNSIEGE);
         } else if (distance < 11 && sc2::UNIT_TYPEID::TERRAN_SIEGETANK == unit->unit_type) {
@@ -113,26 +103,34 @@ private:
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
         float attackRange = std::max(microInfo.range * 2, 5.0f);
         const auto inRange = WithinDistanceOf(unit, attackRange);
+        const NotUnits &notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
         auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
                 inRange,
                 targetableByUnit,
                 HasAttribute(observation, microInfo.strongAgainst),
                 IsDangerous(observation, 5.0f),
+                notToTarget
                 }));
 
-        // TODO: try with least health
         if (getClosestDistanceTo(weakEnemies, unit) <= attackRange) {
+            std::sort(weakEnemies.begin(), weakEnemies.end(), [](auto& enemyA, auto& enemyB) {
+                return enemyA->health < enemyB->health;
+            });
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
             return;
         }
 
-        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit}));
-        if (getClosestDistanceTo(allEnemies, unit) <= attackRange) {
-            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
-            return;
-        } else if (!allEnemies.empty()) {
-            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, allEnemies.front()->pos);
-            return;
+        auto allEnemiesInRange = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit, notToTarget}));
+        if (!allEnemiesInRange.empty()) {
+            std::sort(allEnemiesInRange.begin(), allEnemiesInRange.end(), [](auto& enemyA, auto& enemyB) {
+                return enemyA->health < enemyB->health;
+            });
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemiesInRange.front());
+        } else {
+            auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({sc2::IsVisible(), targetableByUnit, notToTarget}));
+            if (!allEnemies.empty()) {
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
+            }
         }
     }
 

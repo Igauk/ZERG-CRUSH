@@ -20,7 +20,7 @@ bool ParseFromFile(ProcessSettings& process_settings, GameSettings& game_setting
     }
 
     reader.ReadString("executable", process_settings.process_path);
-    int real_time = 0;
+    int real_time = 0; // here real time
     reader.ReadInt("realtime", real_time);
     if (real_time) {
         process_settings.realtime = true;

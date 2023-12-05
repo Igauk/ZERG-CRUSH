@@ -106,7 +106,7 @@ static inline PlayerSetup CreateParticipant(
 }
 
 static inline PlayerSetup CreateComputer(
-    Race race, Difficulty difficulty = Easy, AIBuild ai_build = Rush,
+    Race race, Difficulty difficulty = Easy, AIBuild ai_build = RandomBuild,
     const std::string& player_name = "") {
     return PlayerSetup(PlayerType::Computer, race, nullptr, player_name, difficulty, ai_build);
 }

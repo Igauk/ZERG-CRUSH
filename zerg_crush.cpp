@@ -151,7 +151,7 @@ void ZergCrush::ManageMacro() {
                 -near the starting base
                 -on the bottom of the ramp
                 */
-               Units command_centers = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+               Units command_centers = observation->GetUnits(Unit::Self, IsTownHall());
                int farthest_command_center = 0;
                int index = 0;
                //we build a bunker at the furthest expansion base location
@@ -230,17 +230,9 @@ void ZergCrush::ManageMacro() {
 
 void ZergCrush::ManageUpgrades() {
     const ObservationInterface *observation = Observation();
-    auto upgrades = observation->GetUpgrades();
-
-    TryBuildUnit(ABILITY_ID::RESEARCH_STIMPACK, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_COMBATSHIELD, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_CONCUSSIVESHELLS, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    for (auto & upgrade: upgradeOrder->upgradesToBuild(observation)) {
+        TryBuildUnit(upgrade->getAbilityId(), upgrade->getUpgradeStructure());
+    }
 }
 
 
@@ -922,28 +914,8 @@ void ZergCrush::OnGameStart() {
 
     attackMicro = new ZergCrushMicro(Actions());
 
-    std::vector<BuildOrderStructure> tvtStructures = {
-            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
-            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 18, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_MISSILETURRET, true),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+    std::vector<Upgrade> upgrades {
+        Upgrade(observation, 20, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_STIMPACK, UPGRADE_ID::STIMPACK),
     };
 
     std::vector<ArmySquadron *> tvtArmyComposition = {
@@ -951,7 +923,7 @@ void ZergCrush::OnGameStart() {
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_REAPER), 1, 10},
+                    {IsUnit(UNIT_TYPEID::TERRAN_REAPER), 1, 10, true},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
@@ -959,6 +931,25 @@ void ZergCrush::OnGameStart() {
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 3},
             }),
+    };
+    std::vector<BuildOrderStructure> tvtStructures = {
+            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
+            BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 21, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 41, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 41, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 41, UNIT_TYPEID::STARPORTTECHREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
     };
 
     std::vector<BuildOrderStructure> tvzStructures = {
@@ -1116,16 +1107,19 @@ void ZergCrush::OnGameStart() {
         case Terran: {
             buildOrder = new BuildOrder(tvtStructures);
             armyComposition = new ArmyComposition(tvtArmyComposition);
+            upgradeOrder = new UpgradeOrder(upgrades);
             break;
         }
         case Zerg: {
             buildOrder = new BuildOrder(tvzStructures);
             armyComposition = new ArmyComposition(tvzArmyComposition);
+            upgradeOrder = new UpgradeOrder(upgrades);
             break;
         }
         case Protoss:
             buildOrder = new BuildOrder(tvpStructures);
             armyComposition = new ArmyComposition(tvpArmyComposition);
+            upgradeOrder = new UpgradeOrder(upgrades);
             break;
     }
 }
@@ -1178,6 +1172,15 @@ void ZergCrush::OnUnitCreated(const sc2::Unit *unit) {
 }
 
 void ZergCrush::OnBuildingConstructionComplete(const Unit *unit) {
+    if (unit->unit_type == UNIT_TYPEID::TERRAN_BUNKER) {
+        Units marines = Observation()->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
+        std::sort(marines.begin(), marines.end(), [unit](const auto &marineA, const auto &marineB) {
+            return Distance2D(marineA->pos, unit->pos) < Distance2D(marineB->pos, unit->pos);
+        });
+        for (auto iter = marines.begin(); iter != marines.begin() + unit->cargo_space_max; ++iter) {
+            Actions()->UnitCommand(*iter, ABILITY_ID::LOAD_BUNKER, unit);
+        }
+    }
     buildOrder->OnBuildingFinished(Observation(), unit);
 }
 

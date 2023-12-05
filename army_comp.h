@@ -8,14 +8,23 @@
 
 // TODO: could maybe have a option such that this is taken as a TRUMP condition, need something to stop production
 struct SquadronBuildCondition {
+    SquadronBuildCondition(const sc2::Filter &unitFilter, uint32_t requiredAmountToTrigger, uint32_t unitResponse)
+            : unitFilter(unitFilter), requiredAmountToTrigger(requiredAmountToTrigger), unitResponse(unitResponse) {}
+
     SquadronBuildCondition(sc2::Filter unitFilter,
                            uint32_t requiredAmountToTrigger,
                            uint32_t unitResponse,
-                           sc2::Unit::Alliance alliance = sc2::Unit::Alliance::Self) :
-            alliance(alliance),
-            unitFilter(std::move(unitFilter)),
-            requiredAmountToTrigger(requiredAmountToTrigger),
-            unitResponse(unitResponse) {}
+                           sc2::Unit::Alliance alliance) :
+            SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse) {
+        this->alliance = alliance;
+    }
+
+    SquadronBuildCondition(sc2::Filter unitFilter,
+                           uint32_t requiredAmountToTrigger,
+                           uint32_t unitResponse,
+                           bool isRatio) : SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse) {
+        this->isRatio = isRatio;
+    }
 
     /**
      * Which side triggers this condition
@@ -36,6 +45,11 @@ struct SquadronBuildCondition {
      * The response in terms of the units we build
      */
     uint32_t unitResponse;
+    
+    /**
+     * Response is a ratio from the required amount to trigger
+     */
+    bool isRatio = false;
 };
 
 
@@ -71,6 +85,12 @@ public:
      */
     void setGoalCount(const sc2::ObservationInterface *observation, bool ratio = false) {
         for (const auto &condition: conditions) {
+            if (condition.isRatio) {
+                int numTriggerUnits = (int) observation->GetUnits(condition.alliance, condition.unitFilter).size();
+                if (numTriggerUnits >= condition.requiredAmountToTrigger) {
+                    unitGoalCount = std::max(unitGoalCount, condition.unitResponse * numTriggerUnits);
+                }
+            }
             if (observation->GetUnits(condition.alliance, condition.unitFilter).size() >=
                 condition.requiredAmountToTrigger) {
                 // Build more units if the condition is stronger

@@ -30,15 +30,16 @@ public:
         switch (unit->unit_type.ToType()) {
             case sc2::UNIT_TYPEID::TERRAN_MARINE:
                 handleMarineMicro(observation, unit);
+                break;
             case sc2::UNIT_TYPEID::TERRAN_MARAUDER:
                 handleMarauderMicro(observation, unit);
+                break;
             case sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED:
             case sc2::UNIT_TYPEID::TERRAN_SIEGETANK:
                 handleSiegeTankMicro(observation, unit);
-            case sc2::UNIT_TYPEID::TERRAN_REAPER:
-                attackWeakest(observation, unit);
-            default:
                 break;
+            default:
+                attackWeakest(observation, unit);
         }
     }
 

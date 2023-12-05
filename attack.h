@@ -116,7 +116,34 @@ private:
             std::sort(weakEnemies.begin(), weakEnemies.end(), [](auto& enemyA, auto& enemyB) {
                 return enemyA->health < enemyB->health;
             });
-            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
+            auto enemy_data = observation->GetUnitTypeData().at(weakEnemies.front()->unit_type);
+            float enemy_range;
+            if (enemy_data.weapons.empty()) {
+                enemy_range = 0;
+            }
+            else {
+                enemy_range = enemy_data.weapons.front().range;
+            }
+            if (MicroInformation(observation, unit).range > enemy_range) {
+                const auto inEnemyRange = WithinDistanceOf(weakEnemies.front(), enemy_range);
+                auto allies_in_range = observation->GetUnits(sc2::Unit::Ally, CombinedFilter({ inEnemyRange }));
+                bool within_range = false;
+                for (int i = 0; i < allies_in_range.size(); i++) {
+                    if (unit == allies_in_range[i]) {
+                        within_range = true;
+                        break;
+                    }
+                }
+                if (unit->weapon_cooldown == 0 && !within_range) {
+                    actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
+                }
+                else {
+                    actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, observation->GetGameInfo().start_locations.front());
+                }
+            }
+            else {
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
+            }
             return;
         }
 

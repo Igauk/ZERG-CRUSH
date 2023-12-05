@@ -41,6 +41,9 @@ public:
             case sc2::UNIT_TYPEID::TERRAN_MEDIVAC:
                 handleMedivacMicro(observation, unit);
                 break;
+            case sc2::UNIT_TYPEID::TERRAN_SCV:
+                run(observation, unit);
+                break;
             default:
                 micro(observation, unit);
         }
@@ -111,6 +114,15 @@ private:
             return allyA->health < allyB->health;
         });
         actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, toHeal.front());
+    }
+
+    void run(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        const auto dangerousEnemies = IsDangerous(observation, 0.0f);
+        const auto inRange = WithinDistanceOf(unit, 2.5f);
+        auto enemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({dangerousEnemies, inRange}));
+        if (enemies.empty()) return;
+        auto backwards = unit->pos - enemies.front()->pos;
+        actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
     }
 
     void micro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {

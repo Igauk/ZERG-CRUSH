@@ -909,8 +909,8 @@ void ZergCrush::OnGameStart() {
     expansionLocations = search::CalculateExpansionLocations(observation, Query());
 
     // Weird clusters at bottom corner
-    expansionLocations.erase(std::find_if(expansionLocations.begin(), expansionLocations.end(), [](auto &location) {
-        return location.x == 0 && location.y == 0;
+    expansionLocations.erase(std::remove_if(expansionLocations.begin(), expansionLocations.end(), [](auto &location) {
+        return location.x == 0.0f && location.y == 0.0f;
     }), expansionLocations.end());
 
     startingLocation = Observation()->GetStartLocation();

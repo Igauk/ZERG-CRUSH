@@ -123,10 +123,6 @@ private:
     void setEnemyRace(const ObservationInterface *observation);
 
     bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
-=========
-    bool
-    TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
->>>>>>>>> Temporary merge branch 2
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 

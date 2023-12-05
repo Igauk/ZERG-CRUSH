@@ -68,7 +68,7 @@ bool ZergCrush::TryBuildWallPiece(sc2::UnitTypeID piece) {
     }
 
     //figure out which ramp we are closest to
-    int closest_ramp = 0;   
+    int closest_ramp = 0;
     int index = 0;
 
     sc2::Point2D startLocation = observation->GetStartLocation();
@@ -254,16 +254,24 @@ void ZergCrush::ManageArmy() {
                                                                                   WithinDistanceOf(squadronLeader, std::max(MicroInformation(observation, squadronLeader).range * 2, 15.0f)),
                                                                                   WithinDistanceOf(baseRallyPoint, 15.0f)}));
 
+            sc2::Units byBase = observation->GetUnits(sc2::Unit::Alliance::Enemy,
+                                                      CombinedFilter({IsVisible(),
+                                                                      TargetableBy(observation, squadronLeader),
+                                                                      WithinDistanceOf(baseRallyPoint, 30.0f)}));
+
             if (!attackableEnemies.empty()) {
                 for (const auto& unit : squadron->getSquadron()) {
                     attackMicro->microUnit(observation, unit);
                 }
                 return true; // Remove squadron from allSquadrons, busy attacking
+            } else if (!byBase.empty()) { // Return to base to defend TODO: may not always want to
+                Actions()->UnitCommand(squadron->getSquadron(), ABILITY_ID::SMART, byBase.front()->pos);
+                return true; // Remove squadron from allSquadrons, busy going back to defend
             }
             return false;
         }
     ), allSquadrons.end());
-    
+
     std::vector<ArmySquadron *> scouts = armyComposition->getSquadronsByType(allSquadrons, SCOUT);
     for (auto &scoutSquadron: scouts) {
         // Only scout with completed squadrons
@@ -275,7 +283,7 @@ void ZergCrush::ManageArmy() {
     Units enemiesNearBase = observation->GetUnits(Unit::Alliance::Enemy,
                                                   CombinedFilter({IsVisible(),
                                                                   WithinDistanceOf(baseRallyPoint, 30.0f)}));
-            
+
     if (waitUntilSupply >= observation->GetArmyCount()) {
         for (auto &mainSquadron: main) {
             // If our units are in multiple clusters move them together to a point by our base rally point
@@ -463,6 +471,8 @@ void ZergCrush::clusterUnits(const Units &units, float clusterDistance) {
     if (clusters.size() <= 1) {
         return;  // No need to cluster if there's only one or zero clusters
     }
+
+    LowerSupplyDepotsNear();
 
     // Special Case: Clusters at different heights, group at the largest one
     float heightDeltaThreshold = 1.0f;
@@ -874,16 +884,25 @@ void ZergCrush::OnGameEnd() {
     std::cout << "Game Ended for: " << std::to_string(Control()->Proto().GetAssignedPort()) << std::endl;
 }
 
+// TODO: Command center is not being built on CactusLE
+// TODO: Siege tanks are getting stuck on CactusLE
+// TODO: Build order is bad -> do a rush, make more conditions
+// TODO: Supply depots still causing problems, wall causing problems
 void ZergCrush::OnGameStart() {
-    enemyStartingLocations = Observation()->GetGameInfo().enemy_start_locations;
-    expansionLocations = search::CalculateExpansionLocations(Observation(), Query());
+    auto observation = Observation();
+    enemyStartingLocations = observation->GetGameInfo().enemy_start_locations;
+    expansionLocations = search::CalculateExpansionLocations(observation, Query());
+
+    // Weird clusters at bottom corner
+    expansionLocations.erase(std::find_if(expansionLocations.begin(), expansionLocations.end(), [](auto &location) {
+        return location.x == 0 && location.y == 0;
+    }), expansionLocations.end());
 
     startingLocation = Observation()->GetStartLocation();
     baseRallyPoint = startingLocation;
 
     setEnemyExpansionLocations();
 
-    auto observation = Observation();
     setEnemyRace(observation);
 
     attackMicro = new ZergCrushMicro(Actions());

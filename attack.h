@@ -59,13 +59,7 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            if (unit->weapon_cooldown == 0) {
-                attackWeakest(observation, unit);
-            }
-            else {
-                sc2::GameInfo game;
-                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, game.start_locations.front());
-            }
+            attackWeakest(observation, unit);
         }
     }
 
@@ -73,13 +67,7 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            if (unit->weapon_cooldown == 0) {
-                attackWeakest(observation, unit);
-            }
-            else {
-                sc2::GameInfo game;
-                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, game.start_locations.front());
-            }
+            attackWeakest(observation, unit);
         }
     }
 

@@ -5,13 +5,37 @@
 
 #include "sc2api/sc2_unit_filters.h"
 
+struct BuildCondition {
+    BuildCondition(const sc2::Filter &unitFilter, uint32_t requiredAmountToTrigger, bool reverse = false)
+            : unitFilter(unitFilter), requiredAmountToTrigger(requiredAmountToTrigger), reverse(reverse) {}
+
+    bool isConditionMet(const sc2::ObservationInterface* observation) const {
+        int numTriggerUnits = (int) observation->GetUnits(alliance, unitFilter).size();
+        return reverse ? numTriggerUnits <= requiredAmountToTrigger : numTriggerUnits >= requiredAmountToTrigger;
+    }
+
+    sc2::Filter unitFilter;
+    uint32_t requiredAmountToTrigger = 0;
+    sc2::Unit::Alliance alliance = sc2::Unit::Alliance::Enemy;
+
+    /**
+     * Condition triggers on the reverse condition
+     */
+    bool reverse;
+};
+
+
 class BuildOrderStructure {
 public:
     BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
                         unsigned int supplyRequirement,
                         sc2::UnitTypeID structureType,
+                        std::vector<BuildCondition> conditions = {},
                         bool chainBuild = false)
-            : supplyRequirement(supplyRequirement), structureType(structureType), chainBuild(chainBuild) {
+            : supplyRequirement(supplyRequirement),
+            structureType(structureType),
+            chainBuild(chainBuild),
+            buildConditions(std::move(conditions)) {
         sc2::UnitTypeData data = observationInterface->GetUnitTypeData().at(this->structureType);
         mineralCost = data.mineral_cost;
         vespeneCost = data.vespene_cost;
@@ -21,15 +45,17 @@ public:
 
     BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
                         sc2::UnitTypeID structureType,
+                        std::vector<BuildCondition> conditions = {},
                         bool chainBuild=false)
-            : BuildOrderStructure(observationInterface, 0, structureType, chainBuild) {
+            : BuildOrderStructure(observationInterface, 0, structureType, std::move(conditions), chainBuild) {
     }
 
     BuildOrderStructure(const sc2::ObservationInterface *observationInterface,
                         unsigned int supplyRequirement,
                         sc2::UnitTypeID structureType,
-                        sc2::UnitTypeID baseStructureType)
-            : BuildOrderStructure(observationInterface, supplyRequirement, structureType) {
+                        sc2::UnitTypeID baseStructureType,
+                        std::vector<BuildCondition> conditions = {})
+            : BuildOrderStructure(observationInterface, supplyRequirement, structureType, std::move(conditions)) {
         this->baseStructureType = new sc2::UnitTypeID(baseStructureType);
         // Orbital command takes into account cost of command center
         if (sc2::UNIT_TYPEID::TERRAN_ORBITALCOMMAND == this->structureType) {
@@ -40,23 +66,23 @@ public:
         }
     }
 
-
     /**
      * Returns true if we have enough resources and the prerequisites for building this structure
      */
-    bool canBuild(const sc2::ObservationInterface *observation) {
+    bool canBuild(const sc2::ObservationInterface* observation) {
         bool haveEnoughResources = observation->GetMinerals() >= mineralCost &&
                                    observation->GetVespene() >= vespeneCost;
         bool atSupply = observation->GetFoodUsed() >= supplyRequirement;
         bool haveRequiredTech = true;
         if (techRequirement) {
-            haveRequiredTech = !observation->GetUnits(sc2::Unit::Alliance::Self,
-                                                      sc2::IsUnit(techRequirement)).empty();
+            haveRequiredTech = !observation->GetUnits(sc2::Unit::Alliance::Self, sc2::IsUnit(techRequirement)).empty();
         }
-        if (isChainBuild()) {
-            return getBuiltBy() && haveEnoughResources && !built();
-        }
-        return haveEnoughResources && atSupply && haveRequiredTech && !built();
+
+        bool isConditionMet = std::all_of(buildConditions.begin(), buildConditions.end(), [observation](auto &condition) {
+            return condition.isConditionMet(observation);
+        });
+
+        return haveEnoughResources && (atSupply && isConditionMet) && haveRequiredTech && !built();
     }
 
     /**
@@ -180,6 +206,8 @@ private:
     bool chainBuild = false;
 
     bool builtAddOn = false;
+
+    std::vector<BuildCondition> buildConditions = {};
 };
 
 class BuildOrder {

@@ -38,8 +38,14 @@ public:
             case sc2::UNIT_TYPEID::TERRAN_SIEGETANK:
                 handleSiegeTankMicro(observation, unit);
                 break;
+            case sc2::UNIT_TYPEID::TERRAN_MEDIVAC:
+                handleMedivacMicro(observation, unit);
+                break;
+            case sc2::UNIT_TYPEID::TERRAN_SCV:
+                run(observation, unit);
+                break;
             default:
-                attackWeakest(observation, unit);
+                micro(observation, unit);
         }
     }
 
@@ -60,7 +66,7 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            attackWeakest(observation, unit);
+            micro(observation, unit);
         }
     }
 
@@ -68,7 +74,7 @@ private:
         if (stimResearched && !unit->orders.empty()) {
             if (unit->orders.front().ability_id == sc2::ABILITY_ID::ATTACK) stimInRange(observation, unit);
         } else {
-            attackWeakest(observation, unit);
+            micro(observation, unit);
         }
     }
 
@@ -94,23 +100,67 @@ private:
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_SIEGEMODE);
         }
         else {
-            attackWeakest(observation, unit);
+            micro(observation, unit);
         }
     }
 
-    void attackWeakest(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+    void handleMedivacMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        // TODO: Load units if they are dying and fly away
+        const auto inHealingRange = WithinDistanceOf(unit, 5.0f);
+
+        auto toHeal = observation->GetUnits(sc2::Unit::Self, inHealingRange);
+        if (toHeal.empty()) return;
+        std::sort(toHeal.begin(), toHeal.end(), [](auto& allyA, auto& allyB) {
+            return allyA->health < allyB->health;
+        });
+        actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, toHeal.front());
+    }
+
+    void run(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        const auto dangerousEnemies = IsDangerous(observation, 0.0f);
+        const auto inRange = WithinDistanceOf(unit, 2.5f);
+        auto enemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({dangerousEnemies, inRange}));
+        if (enemies.empty()) return;
+        auto backwards = unit->pos - enemies.front()->pos;
+        actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
+    }
+
+    void micro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         auto microInfo = MicroInformation(observation, unit);
+
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
-        float attackRange = std::max(microInfo.range * 2, 5.0f);
+        float attackRange = microInfo.range;
         const auto inRange = WithinDistanceOf(unit, attackRange);
-        const NotUnits &notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
+        const auto notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
+        const auto enemiesWithShorterRange = HasRangeInRange(observation, 0.0f, microInfo.range - 0.1f);
+        const auto dangerousEnemies = IsDangerous(observation, 5.0f);
+        const auto weakAgainstUnit = HasAttribute(observation, microInfo.strongAgainst);
+
+        auto kiteableEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
+            inRange,
+            dangerousEnemies,
+            enemiesWithShorterRange,
+        }));
+
         auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
                 inRange,
                 targetableByUnit,
-                HasAttribute(observation, microInfo.strongAgainst),
-                IsDangerous(observation, 5.0f),
+                weakAgainstUnit,
+                dangerousEnemies,
                 notToTarget
-                }));
+        }));
+
+        // If more than half of the enemies are kite-able move backwards
+        if (!weakEnemies.empty() && kiteableEnemies.size() > weakEnemies.size() / 2) {
+            if (unit->weapon_cooldown == 0) {
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
+            }
+            else {
+                auto backwards = unit->pos - kiteableEnemies.front()->pos;
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
+            }
+            return;
+        }
 
         if (getClosestDistanceTo(weakEnemies, unit) <= attackRange) {
             std::sort(weakEnemies.begin(), weakEnemies.end(), [](auto& enemyA, auto& enemyB) {

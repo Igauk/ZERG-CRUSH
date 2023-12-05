@@ -73,6 +73,7 @@ private:
 
     void stimInRange(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         bool hasStimmed = false;
+        if (unit->health < unit->health_max / 2) return; // don't stim at low hp
         auto distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy), unit);
         for (const auto& buff : unit->buffs) {
             if (buff == sc2::BUFF_ID::STIMPACK) {
@@ -85,7 +86,7 @@ private:
     }
 
     void handleSiegeTankMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
-        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy), unit);
+        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy, sc2::IsVisible()), unit);
         if (distance > 13 && sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED == unit->unit_type) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_UNSIEGE);
         } else if (distance < 11 && sc2::UNIT_TYPEID::TERRAN_SIEGETANK == unit->unit_type) {
@@ -101,12 +102,12 @@ private:
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
         float attackRange = std::max(microInfo.range * 2, 5.0f);
         const auto inRange = WithinDistanceOf(unit, attackRange);
-        const NotUnits &notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG});
+        const NotUnits &notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
         auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
                 inRange,
                 targetableByUnit,
                 HasAttribute(observation, microInfo.strongAgainst),
-                IsDangerous(observation, 3.0f),
+                IsDangerous(observation, 5.0f),
                 notToTarget
                 }));
 
@@ -118,12 +119,17 @@ private:
             return;
         }
 
-        auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit, notToTarget}));
-        if (!allEnemies.empty()) {
-            std::sort(allEnemies.begin(), allEnemies.end(), [](auto& enemyA, auto& enemyB) {
+        auto allEnemiesInRange = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit, notToTarget}));
+        if (!allEnemiesInRange.empty()) {
+            std::sort(allEnemiesInRange.begin(), allEnemiesInRange.end(), [](auto& enemyA, auto& enemyB) {
                 return enemyA->health < enemyB->health;
             });
-            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemies.front());
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemiesInRange.front());
+        } else {
+            auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({sc2::IsVisible(), targetableByUnit, notToTarget}));
+            if (!allEnemies.empty()) {
+                actionInterface->UnitCommand(unit, sc2::ABILITY_ID::SMART, allEnemies.front());
+            }
         }
     }
 

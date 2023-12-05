@@ -14,7 +14,7 @@ struct Positions
 {   
     Maps getMap(const sc2::ObservationInterface* &observation) {
         sc2::GameInfo info = observation->GetGameInfo();
-        //std::cout << info.map_name << std::endl;
+        std::cout << info.map_name << std::endl;
         if (info.map_name.find("Cactus") != std::string::npos) {
             return CACTUS;
         }
@@ -67,8 +67,8 @@ struct Positions
     };
     // Turrent behind wall.
     const std::vector<sc2::Point2D> TURRET_POSITIONS_BELSHIR = {
-        sc2::Point2D(40, 136),
-        sc2::Point2D(104, 24),
+        sc2::Point2D(41, 134),
+        sc2::Point2D(105, 26),
     };
 
     // Leftmost barracks position.
@@ -96,8 +96,7 @@ struct Positions
     SUPPLY_DEPOT_POSITIONS_CACTUS,
     BARRACKS_POSITIONS1_CACTUS,
     BARRACKS_POSITIONS2_CACTUS,
-    TURRET_POSITIONS_CACTUS 
-
+    TURRET_POSITIONS_CACTUS
     };
     std::array<std::vector<sc2::Point2D>, 4> belshir_postions = {
         SUPPLY_DEPOT_POSITIONS_BELSHIR,

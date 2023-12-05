@@ -101,7 +101,6 @@ private:
     BuildOrder *buildOrder;
     ArmyComposition *armyComposition;
     ZergCrushMicro *attackMicro;
-    bool depots_raised = false;
 
     void setEnemyRace(const ObservationInterface *observation);
 

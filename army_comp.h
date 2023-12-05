@@ -26,6 +26,15 @@ struct SquadronBuildCondition {
         this->isRatio = isRatio;
     }
 
+    SquadronBuildCondition(sc2::Filter unitFilter,
+                           uint32_t requiredAmountToTrigger,
+                           uint32_t unitResponse,
+                           sc2::Unit::Alliance alliance,
+                           bool isRatio) : SquadronBuildCondition(unitFilter, requiredAmountToTrigger, unitResponse) {
+        this->isRatio = isRatio;
+        this->alliance = alliance;
+    }
+
     /**
      * Which side triggers this condition
      */

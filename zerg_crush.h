@@ -13,7 +13,6 @@
 #include "filters.h"
 #include "upgrade_order.h"
 #include "positions.h"
-#include "ray_cast.h"
 
 struct Point2DComparator {
     bool operator()(const sc2::Point2D& lhs, const sc2::Point2D& rhs) const {
@@ -35,7 +34,7 @@ public:
     /**
      * Builds unit from a specific base structure
      */
-    bool TryBuildFrom(AbilityID abilityId, Tag baseStructure);
+    bool TryBuildFrom(AbilityID abilityId, Tag baseStructure, bool checkPlacement);
 
     bool TryBuildStructureRandom(AbilityID abilityTypeForStructure, UnitTypeID unitType);
 

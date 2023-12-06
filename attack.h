@@ -26,6 +26,7 @@ public:
 
     float range;
     float damage;
+    float timeBetweenAttacks;
     std::vector<sc2::Attribute> strongAgainst;
 private:
     // Private constructor to prevent instantiation outside the class
@@ -34,11 +35,13 @@ private:
         if (data.weapons.empty()) {
             range = 0;
             damage = 0;
+            timeBetweenAttacks = 0;
             strongAgainst = {};
             return;
         }
         range = data.weapons.front().range;
         damage = data.weapons.front().damage_;
+        timeBetweenAttacks = data.weapons.front().speed;
         for (const auto& bonus : data.weapons.front().damage_bonus) {
             strongAgainst.push_back(bonus.attribute);
         }
@@ -51,10 +54,15 @@ struct MostDangerousComparator {
     MostDangerousComparator(const sc2::ObservationInterface* obs) : observation(obs) {}
 
     bool operator()(const sc2::Unit* enemyA, const sc2::Unit* enemyB) const {
-        float enemyDamageA = MicroInformation::getInstance(observation, enemyA->unit_type).damage;
-        float enemyDamageB = MicroInformation::getInstance(observation, enemyB->unit_type).damage;
-
-        return enemyDamageA / enemyA->health < enemyDamageB / enemyB->health;
+        auto enemyAMicroInfo = MicroInformation::getInstance(observation, enemyA->unit_type);
+        auto enemyBMicroInfo = MicroInformation::getInstance(observation, enemyB->unit_type);
+        if (enemyAMicroInfo.damage == enemyBMicroInfo.damage) {
+            if (enemyBMicroInfo.timeBetweenAttacks == enemyBMicroInfo.timeBetweenAttacks) {
+                return enemyA->health > enemyB->health;
+            }
+            return enemyAMicroInfo.timeBetweenAttacks > enemyBMicroInfo.timeBetweenAttacks;
+        }
+        return enemyAMicroInfo.damage < enemyBMicroInfo.damage;
     }
 };
 
@@ -80,6 +88,12 @@ public:
                 break;
             case sc2::UNIT_TYPEID::TERRAN_SCV:
                 run(observation, unit);
+                break;
+            case sc2::UNIT_TYPEID::TERRAN_LIBERATOR:
+                handleLiberatorMicro(observation, unit);
+                break;
+            case sc2::UNIT_TYPEID::TERRAN_CYCLONE:
+                handleCycloneMicro(observation, unit);
                 break;
             default:
                 micro(observation, unit);
@@ -131,22 +145,67 @@ private:
 
     void handleSiegeTankMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy, sc2::IsVisible()), unit);
-        if (distance > 13 && sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED == unit->unit_type) {
+
+        const float unsiegeRange = 13.0f;
+        const float siegeRange = 11.0f;
+
+        if (distance > unsiegeRange && sc2::UNIT_TYPEID::TERRAN_SIEGETANKSIEGED == unit->unit_type) {
+            // Enemies are too far, unsiege
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_UNSIEGE);
-        } else if (distance < 11 && sc2::UNIT_TYPEID::TERRAN_SIEGETANK == unit->unit_type) {
+        } else if (distance < siegeRange && sc2::UNIT_TYPEID::TERRAN_SIEGETANK == unit->unit_type) {
+            // Enemies are getting into range, siege and attack
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_SIEGEMODE);
-        }
-        else {
+            micro(observation, unit); // and attack
+        } else {
             micro(observation, unit);
         }
     }
 
+    void handleCycloneMicro(const sc2::ObservationInterface* observation, const sc2::Unit* unit) {
+        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy, sc2::IsVisible()), unit);
+        float lockOnRange = 6.0f;
+
+        // Lock on when in range
+        if (distance <= lockOnRange) {
+            const auto inRange = WithinDistanceOf(unit, lockOnRange);
+            const auto notLarva = NotUnits({sc2::UNIT_TYPEID::ZERG_LARVA});
+            const auto unitsToLockOn = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, notLarva}));
+            if (unitsToLockOn.empty()) {
+                micro(observation, unit);
+                return;
+            }
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::EFFECT_LOCKON, unitsToLockOn.front());
+        }
+        micro(observation, unit);
+    }
+
+    void handleLiberatorMicro(const sc2::ObservationInterface* observation, const sc2::Unit* unit) {
+        float distance = getClosestDistanceTo(observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
+            sc2::IsVisible()})), unit);
+
+        const float unsiegeRange = 13.0f;
+
+        if (distance > unsiegeRange) {
+            // If the enemy is far, morph into siege mode
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_SIEGEMODE);
+        } else {
+            // If the enemy is close, morph into unsieged mode
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_UNSIEGE);
+            micro(observation, unit);
+        }
+    }
+
+
     void handleMedivacMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         // TODO: Load units if they are dying and fly away
-        const auto closeBy = WithinDistanceOf(unit, 5.0f);
+        const auto closeBy = WithinDistanceOf(unit, 7.5f);
 
-        auto toHeal = observation->GetUnits(sc2::Unit::Self, closeBy);
-
+        auto toHeal = observation->GetUnits(sc2::Unit::Self,
+                                            CombinedFilter({closeBy,
+                                                            sc2::IsUnits({sc2::UNIT_TYPEID::TERRAN_MARINE,
+                                                                          sc2::UNIT_TYPEID::TERRAN_MARAUDER,
+                                                                          sc2::UNIT_TYPEID::TERRAN_GHOST,
+                                                                          sc2::UNIT_TYPEID::TERRAN_REAPER})}));
         if (toHeal.empty()) return;
         std::sort(toHeal.begin(), toHeal.end(), [](auto& allyA, auto& allyB) {
             return allyA->health < allyB->health;
@@ -173,8 +232,11 @@ private:
 
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
         float attackRange = microInfo.range;
+        if (cycloneLockedOn(observation, unit)) {
+            attackRange += 3.0f; // Special case for cyclone, gets extra range when locked on (allows kiting)
+        }
         const auto inRange = WithinDistanceOf(unit, 10.0f);
-        const auto inRangeZ = WithinHeightOf(unit->pos.z, 1.0f);
+        const auto inRangeZ = WithinHeightOf(unit->pos.z, 1.5f);
         const auto notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
         const auto enemiesWithShorterRange = HasRangeInRange(observation, 0.0f, attackRange - 0.1f);
         const auto dangerousEnemies = IsDangerous(observation, 5.0f);
@@ -206,7 +268,7 @@ private:
                 if (backwards.x != 0.0f || backwards.y != 0.0f) {
                     backwards /= std::sqrt(backwards.x * backwards.x + backwards.y * backwards.y);
                 }
-                backwards *= 2.5f;
+                backwards *= 2.0f;
                 actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
             }
             return;
@@ -230,7 +292,23 @@ private:
         }
     }
 
-    float getClosestDistanceTo(const sc2::Units &units, const sc2::Unit *const &unit) {
+    static bool cycloneLockedOn(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        if (unit->orders.empty()) return false;
+        if (sc2::UNIT_TYPEID::TERRAN_CYCLONE != unit->unit_type) return false;
+
+        auto isAttacking = sc2::ABILITY_ID::ATTACK == unit->orders.front().ability_id;
+        if (!isAttacking) return false;
+
+        auto engagedTag = unit->engaged_target_tag;
+        const auto *engaged = observation->GetUnit(engagedTag);
+        if (engaged == nullptr) return false;
+
+        // Check if we are currently attacking and farther than range (after kiting), so we must be locked on
+        return sc2::Distance2D(unit->pos, engaged->pos) > MicroInformation::getInstance(observation, unit->unit_type).range &&
+               unit->weapon_cooldown > 0;
+    }
+
+    static float getClosestDistanceTo(const sc2::Units &units, const sc2::Unit *const &unit) {
         float minimumEnemyUnitDistance = std::numeric_limits<float>::max();
         for (const auto &enemyUnit: units) {
             float unitDistance = Distance2D(enemyUnit->pos, unit->pos);

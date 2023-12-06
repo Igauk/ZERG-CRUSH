@@ -984,8 +984,9 @@ void ZergCrush::OnGameStart() {
             }, SCOUT, false), // Scouting SCV
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
                     {IsUnit(sc2::UNIT_TYPEID::TERRAN_BARRACKS), 1, 5, true, false},
-                    {IsUnit(sc2::UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 5, true, false}
+                    {IsUnit(sc2::UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 10}
             }),
+            
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, {
                     {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 10},
                     {IsUnit(UNIT_TYPEID::TERRAN_CYCLONE), 1, 8}
@@ -1000,6 +1001,7 @@ void ZergCrush::OnGameStart() {
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
                     {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 5},
             }),
+            
     };
 
 

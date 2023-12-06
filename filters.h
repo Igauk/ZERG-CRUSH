@@ -78,6 +78,17 @@ struct IsDangerous {
 
 };
 
+struct WithinHeightOf {
+    explicit WithinHeightOf(float height, float delta = 0.0f) : height_(height), delta_(delta) {}
+
+    bool operator()(const sc2::Unit& unit) {
+        return unit.pos.z <= (height_ + delta_) || unit.pos.z >= (height_ - delta_ * 2);
+    }
+
+    const float height_;
+    const float delta_;
+};
+
 struct WithinDistanceOf {
     explicit WithinDistanceOf(const sc2::Unit* unit, float distance): distance_(distance) {
         position_ = unit->pos;

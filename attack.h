@@ -174,6 +174,7 @@ private:
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
         float attackRange = microInfo.range;
         const auto inRange = WithinDistanceOf(unit, 10.0f);
+        const auto inRangeZ = WithinHeightOf(unit->pos.z, 1.0f);
         const auto notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
         const auto enemiesWithShorterRange = HasRangeInRange(observation, 0.0f, attackRange - 0.1f);
         const auto dangerousEnemies = IsDangerous(observation, 5.0f);
@@ -181,12 +182,14 @@ private:
 
         auto kiteableEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
             inRange,
+            inRangeZ,
             dangerousEnemies,
             enemiesWithShorterRange,
         }));
 
         auto weakEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({
                 inRange,
+                inRangeZ,
                 targetableByUnit,
                 weakAgainstUnit,
                 dangerousEnemies,

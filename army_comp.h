@@ -99,11 +99,13 @@ public:
      * Sets the number of units that we want at any given moment
      */
     void setGoalCount(const sc2::ObservationInterface *observation) {
+        if (trumped) return;
         for (const auto &condition: conditions) {
             if (condition.trumpCondition) {
                 int numTriggerUnits = (int) observation->GetUnits(condition.alliance, condition.unitFilter).size();
                 if (numTriggerUnits >= condition.requiredAmountToTrigger) {
                     unitGoalCount = condition.unitResponse;
+                    trumped = true;
                     break;
                 }
             }
@@ -234,6 +236,11 @@ private:
      * How many comrades have fallen
      */
     uint32_t numFallenUnits = 0;
+
+    /**
+     * Trump condition has been met
+     */
+    bool trumped = false;
 };
 
 

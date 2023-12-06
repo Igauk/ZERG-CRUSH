@@ -4,23 +4,60 @@
 
 #include "filters.h"
 
-struct MicroInformation {
-    MicroInformation(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
-        auto data = observation->GetUnitTypeData().at(unit->unit_type);
+#include <unordered_map>
+
+class MicroInformation {
+public:
+    static const MicroInformation& getInstance(const sc2::ObservationInterface* observation, sc2::UnitTypeID unitType) {
+        // For each unit we can store one version of MicroInformation and retrieve it during the game
+        static std::map<sc2::UnitTypeID, MicroInformation> instanceMap;
+
+        // Check to see if instance exists
+        auto it = instanceMap.find(unitType);
+        if (it != instanceMap.end()) {
+            return it->second;
+        }
+
+        // Create a new instance if not found
+        MicroInformation newMicroInfo(observation, unitType);
+        instanceMap.insert({unitType, newMicroInfo});
+        return instanceMap.at(unitType);
+    }
+
+    float range;
+    float damage;
+    std::vector<sc2::Attribute> strongAgainst;
+private:
+    // Private constructor to prevent instantiation outside the class
+    MicroInformation(const sc2::ObservationInterface* observation, sc2::UnitTypeID unitType) {
+        auto data = observation->GetUnitTypeData().at(unitType);
         if (data.weapons.empty()) {
             range = 0;
+            damage = 0;
             strongAgainst = {};
             return;
         }
         range = data.weapons.front().range;
-        for (const auto &bonus: data.weapons.front().damage_bonus) {
+        damage = data.weapons.front().damage_;
+        for (const auto& bonus : data.weapons.front().damage_bonus) {
             strongAgainst.push_back(bonus.attribute);
         }
     }
-
-    float range;
-    std::vector<sc2::Attribute> strongAgainst;
 };
+
+struct MostDangerousComparator {
+    const sc2::ObservationInterface* observation;
+
+    MostDangerousComparator(const sc2::ObservationInterface* obs) : observation(obs) {}
+
+    bool operator()(const sc2::Unit* enemyA, const sc2::Unit* enemyB) const {
+        float enemyDamageA = MicroInformation::getInstance(observation, enemyA->unit_type).damage;
+        float enemyDamageB = MicroInformation::getInstance(observation, enemyB->unit_type).damage;
+
+        return enemyDamageA / enemyA->health < enemyDamageB / enemyB->health;
+    }
+};
+
 
 class ZergCrushMicro {
 public:
@@ -87,7 +124,7 @@ private:
                 hasStimmed = true;
             }
         }
-        if (distance < MicroInformation(observation, unit).range + 1 && !hasStimmed) {
+        if (distance < MicroInformation::getInstance(observation, unit->unit_type).range + 1 && !hasStimmed) {
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::EFFECT_STIM);
         }
     }
@@ -106,9 +143,10 @@ private:
 
     void handleMedivacMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
         // TODO: Load units if they are dying and fly away
-        const auto inHealingRange = WithinDistanceOf(unit, 5.0f);
+        const auto closeBy = WithinDistanceOf(unit, 5.0f);
 
-        auto toHeal = observation->GetUnits(sc2::Unit::Self, inHealingRange);
+        auto toHeal = observation->GetUnits(sc2::Unit::Self, closeBy);
+
         if (toHeal.empty()) return;
         std::sort(toHeal.begin(), toHeal.end(), [](auto& allyA, auto& allyB) {
             return allyA->health < allyB->health;
@@ -122,17 +160,22 @@ private:
         auto enemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({dangerousEnemies, inRange}));
         if (enemies.empty()) return;
         auto backwards = unit->pos - enemies.front()->pos;
+        // Normalize vector first
+        if (backwards.x != 0.0f || backwards.y != 0.0f) {
+            backwards /= std::sqrt(backwards.x * backwards.x + backwards.y * backwards.y);
+        }
+        backwards *= 5.0f; // Run location at length 5 away
         actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
     }
 
     void micro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
-        auto microInfo = MicroInformation(observation, unit);
+        auto microInfo = MicroInformation::getInstance(observation, unit->unit_type);
 
         const TargetableBy &targetableByUnit = TargetableBy(observation, unit);
         float attackRange = microInfo.range;
-        const auto inRange = WithinDistanceOf(unit, attackRange);
+        const auto inRange = WithinDistanceOf(unit, 10.0f);
         const auto notToTarget = NotUnits({sc2::UNIT_TYPEID::ZERG_EGG, sc2::UNIT_TYPEID::ZERG_LARVA});
-        const auto enemiesWithShorterRange = HasRangeInRange(observation, 0.0f, microInfo.range - 0.1f);
+        const auto enemiesWithShorterRange = HasRangeInRange(observation, 0.0f, attackRange - 0.1f);
         const auto dangerousEnemies = IsDangerous(observation, 5.0f);
         const auto weakAgainstUnit = HasAttribute(observation, microInfo.strongAgainst);
 
@@ -150,31 +193,31 @@ private:
                 notToTarget
         }));
 
-        // If more than half of the enemies are kite-able move backwards
+        // If more than half of the enemies are kiteable move backwards
         if (!weakEnemies.empty() && kiteableEnemies.size() > weakEnemies.size() / 2) {
             if (unit->weapon_cooldown == 0) {
                 actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
             }
             else {
                 auto backwards = unit->pos - kiteableEnemies.front()->pos;
+                if (backwards.x != 0.0f || backwards.y != 0.0f) {
+                    backwards /= std::sqrt(backwards.x * backwards.x + backwards.y * backwards.y);
+                }
+                backwards *= 2.5f;
                 actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MOVE_MOVE, unit->pos + backwards);
             }
             return;
         }
 
         if (getClosestDistanceTo(weakEnemies, unit) <= attackRange) {
-            std::sort(weakEnemies.begin(), weakEnemies.end(), [](auto& enemyA, auto& enemyB) {
-                return enemyA->health < enemyB->health;
-            });
+            std::sort(weakEnemies.begin(), weakEnemies.end(), MostDangerousComparator(observation));
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, weakEnemies.front());
             return;
         }
 
         auto allEnemiesInRange = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({inRange, targetableByUnit, notToTarget}));
         if (!allEnemiesInRange.empty()) {
-            std::sort(allEnemiesInRange.begin(), allEnemiesInRange.end(), [](auto& enemyA, auto& enemyB) {
-                return enemyA->health < enemyB->health;
-            });
+            std::sort(allEnemiesInRange.begin(), allEnemiesInRange.end(), MostDangerousComparator(observation));
             actionInterface->UnitCommand(unit, sc2::ABILITY_ID::ATTACK, allEnemiesInRange.front());
         } else {
             auto allEnemies = observation->GetUnits(sc2::Unit::Enemy, CombinedFilter({sc2::IsVisible(), targetableByUnit, notToTarget}));

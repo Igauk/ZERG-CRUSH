@@ -100,7 +100,7 @@ private:
     /**
      * Where we think the enemy is, prioritize going here when scouting
      */
-    Point2D* assumedEnemyStartingLocation = nullptr;
+    const Point2D* assumedEnemyStartingLocation = nullptr;
 
     /**
      * Queried at the start of the game, represents our starting location on the map
@@ -137,9 +137,9 @@ private:
     bool TryExpand(AbilityID buildAbility, UnitTypeID workerType);
 
     bool
-    TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Point2D location, bool isExpansion = false);
+    TryBuildStructure(AbilityID abilityIdForStruct, Point2D location, bool isExpansion);
 
-    bool TryBuildStructure(AbilityID ability_type_for_structure, UnitTypeID unit_type, Tag location_tag);
+    bool TryBuildStructure(AbilityID abilityTypeForStructure, Tag structureTag);
 
     const Unit *FindNearestMineralPatch(const Point2D &start);
 

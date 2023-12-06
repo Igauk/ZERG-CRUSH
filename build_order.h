@@ -6,12 +6,12 @@
 #include "sc2api/sc2_unit_filters.h"
 
 struct BuildCondition {
-    BuildCondition(const sc2::Filter &unitFilter, uint32_t requiredAmountToTrigger, bool reverse = false)
-            : unitFilter(unitFilter), requiredAmountToTrigger(requiredAmountToTrigger), reverse(reverse) {}
+    BuildCondition(const sc2::Filter &unitFilter, uint32_t requiredAmountToTrigger, bool reverse = false, sc2::Unit::Alliance alliance = sc2::Unit::Enemy)
+            : unitFilter(unitFilter), requiredAmountToTrigger(requiredAmountToTrigger), reverse(reverse), alliance(alliance) {}
 
     bool isConditionMet(const sc2::ObservationInterface* observation) const {
         int numTriggerUnits = (int) observation->GetUnits(alliance, unitFilter).size();
-        return reverse ? numTriggerUnits <= requiredAmountToTrigger : numTriggerUnits >= requiredAmountToTrigger;
+        return reverse ? numTriggerUnits < requiredAmountToTrigger : numTriggerUnits >= requiredAmountToTrigger;
     }
 
     sc2::Filter unitFilter;

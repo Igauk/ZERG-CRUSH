@@ -304,8 +304,7 @@ private:
         if (engaged == nullptr) return false;
 
         // Check if we are currently attacking and farther than range (after kiting), so we must be locked on
-        return sc2::Distance2D(unit->pos, engaged->pos) > MicroInformation::getInstance(observation, unit->unit_type).range &&
-               unit->weapon_cooldown > 0;
+        return sc2::Distance2D(unit->pos, engaged->pos) >= MicroInformation::getInstance(observation, unit->unit_type).range;
     }
 
     static float getClosestDistanceTo(const sc2::Units &units, const sc2::Unit *const &unit) {

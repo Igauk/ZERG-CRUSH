@@ -11,7 +11,7 @@ void ZergCrush::OnStep() {
     ManageArmy();
     ManageMacro();
     ManageUpgrades();
-    if (TryBuildSCV()) return;
+    TryBuildSCV();
     TryCallDownMule();
     BuildArmy();
 }
@@ -21,6 +21,7 @@ void ZergCrush::BuildArmy() {
 
     auto allSquadrons = armyComposition->getAllSquadrons();
     auto unitsToBuild = armyComposition->squadronsToBuild(allSquadrons, observation);
+    std::random_shuffle(unitsToBuild.begin(), unitsToBuild.end()); // Shuffle units to randomize build order
     for (const auto &unit: unitsToBuild) {
         // Grab army and building counts
         Units buildings = observation->GetUnits(Unit::Alliance::Self, IsUnit(unit->getBuildingStructureType()));
@@ -239,7 +240,7 @@ void ZergCrush::ManageArmy() {
             if (squadron.empty()) continue;
 
             // If there are units nearby use micro strategies (i.e. we are already on the offensive, or being attacked)
-            sc2::Units nearby = observation->GetUnits(sc2::Unit::Enemy, WithinDistanceOf(squadron.front()->pos, 10.0f));
+            sc2::Units nearby = observation->GetUnits(sc2::Unit::Enemy, WithinDistanceOf(squadron.front()->pos, 20.0f));
             if (!nearby.empty()) {
                 for (const auto &unit: squadron) {
                     attackMicro->microUnit(observation, unit);
@@ -584,6 +585,7 @@ bool ZergCrush::TryBuildSCV() {
     if (observation->GetFoodWorkers() > GetExpectedWorkers()) return false;
 
     const Unit* baseToBePopulated = nullptr;
+    const Unit* geyserToBePopulated = nullptr;
     int numWorkersNeeded = 0;
 
     // Find a base that is missing workers, we will try to supply it
@@ -602,7 +604,7 @@ bool ZergCrush::TryBuildSCV() {
 
     for (const auto &base: bases) {
         if (base->orders.empty() && numWorkersNeeded != 0 && TryBuildUnit(ABILITY_ID::TRAIN_SCV, base->unit_type)) {
-            Actions()->UnitCommand(base, ABILITY_ID::RALLY_COMMANDCENTER, FindNearestMineralPatch(baseToBePopulated->pos));
+            Actions()->UnitCommand(base, ABILITY_ID::RALLY_COMMANDCENTER, baseToBePopulated->pos);
             numWorkersNeeded--;
         }
     }
@@ -1007,7 +1009,10 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_STARPORT),
             BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {
+            BuildOrderStructure(observation, 0, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {
+                    {IsUnit(sc2::UNIT_TYPEID::TERRAN_COMMANDCENTER), 3, false, Unit::Alliance::Self}
+            }),
+            BuildOrderStructure(observation, 0, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {
                     {IsUnit(sc2::UNIT_TYPEID::TERRAN_COMMANDCENTER), 3, false, Unit::Alliance::Self}
             }),
             BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_FACTORY),

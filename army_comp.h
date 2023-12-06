@@ -313,10 +313,6 @@ public:
             if (!squadronsWithRoom.empty()) {
                 sc2::GetRandomEntry(squadronsWithRoom)->assignSquadronMember(unit);
                 return;
-            } else if (unit->unit_type != sc2::UNIT_TYPEID::TERRAN_SCV && !armySquadrons.empty()) {
-                sc2::GetRandomEntry(armySquadrons)->assignSquadronMember(unit);
-            } else if (unit->unit_type != sc2::UNIT_TYPEID::TERRAN_SCV && !squadronsForUnit.empty()) {
-                sc2::GetRandomEntry(squadronsForUnit)->assignSquadronMember(unit);
             }
         }
     }

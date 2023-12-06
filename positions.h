@@ -30,7 +30,7 @@ struct Positions
     };
     // Rightmost barracks position.
     const std::vector<sc2::Point2D> BARRACKS_POSITIONS2_CACTUS = {
-        sc2::Point2D(32, 49),
+        sc2::Point2D(33, 48),
         sc2::Point2D(51, 165),
         sc2::Point2D(142, 32),
         sc2::Point2D(163, 139),

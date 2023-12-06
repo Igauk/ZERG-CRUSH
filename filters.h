@@ -18,7 +18,7 @@ struct CombinedFilter {
 };
 
 struct NotUnits {
-    explicit NotUnits(const std::vector<sc2::UNIT_TYPEID>& types_): types_(std::move(types_)) {};
+    explicit NotUnits(const std::vector<sc2::UNIT_TYPEID>& types_): types_(types_) {};
 
     bool operator()(const sc2::Unit& unit_) const {
         for (const auto &type: types_) {
@@ -28,6 +28,28 @@ struct NotUnits {
         return true;
     }
     const std::vector<sc2::UNIT_TYPEID> types_;
+};
+
+struct HasRangeInRange {
+    explicit HasRangeInRange(const sc2::ObservationInterface* observation,
+                             float minRange = 0.0f,
+                             float maxRange = std::numeric_limits<float>::max())
+            : observation_(observation),
+              minRange_(minRange),
+              maxRange_(maxRange) {};
+
+    bool operator()(const sc2::Unit& unit) {
+        auto weapons = observation_->GetUnitTypeData().at(unit.unit_type).weapons;
+        float maxRange = 0.0f;
+        for (auto& weapon : weapons) {
+            maxRange = std::max(maxRange, weapon.range);
+        }
+        return minRange_ <= maxRange && maxRange <= maxRange_;
+    }
+
+    float minRange_;
+    float maxRange_;
+    const sc2::ObservationInterface* observation_;
 };
 
 
@@ -48,7 +70,7 @@ struct IsDangerous {
         for (auto &weapon : weapons) {
             maxDamage = std::max(maxDamage, weapon.damage_);
         }
-        return maxDamage > damageThreshold_;
+        return maxDamage >= damageThreshold_;
     }
 
     float damageThreshold_;

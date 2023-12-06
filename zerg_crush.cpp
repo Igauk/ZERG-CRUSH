@@ -121,8 +121,8 @@ void ZergCrush::ManageMacro() {
         switch ((UNIT_TYPEID) structure->getUnitTypeID()) {
             case UNIT_TYPEID::TERRAN_SUPPLYDEPOT:
 
-                if(structure->isChainBuildLeader()) {
-                    //std::cout << "wall depot" << std::endl;
+                if(structure->getChainBuild()) {
+                    std::cout << "wall depot" << std::endl;
                     TryBuildWallPiece(UNIT_TYPEID::TERRAN_SUPPLYDEPOT);
                 } else {
                     TryBuildSupplyDepot();
@@ -151,7 +151,7 @@ void ZergCrush::ManageMacro() {
                 -near the starting base
                 -on the bottom of the ramp
                 */
-               Units command_centers = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_COMMANDCENTER));
+               Units command_centers = observation->GetUnits(Unit::Self, IsTownHall());
                int farthest_command_center = 0;
                int index = 0;
                //we build a bunker at the furthest expansion base location
@@ -181,19 +181,9 @@ void ZergCrush::ManageMacro() {
                     TryBuildStructure(ABILITY_ID::BUILD_BUNKER, UNIT_TYPEID::TERRAN_SCV, getRandomLocationBy(command_centers[farthest_command_center]->pos, 5.0), false);
                     continue;
                 }
-
-                Units marines = observation->GetUnits(Unit::Self, IsUnit(UNIT_TYPEID::TERRAN_MARINE));
-                int marine_index = 0;
-                for(const auto& marine : marines) {
-                    if(index >= 4) {break;}
-                    std::cout << "loading bunker" <<std::endl;
-                    Actions()->UnitCommand(marine, ABILITY_ID::LOAD_BUNKER);
-                    ++marine_index;
-                }
-
-
-
             }
+            case UNIT_TYPEID::TERRAN_FACTORY:
+                
 
             default:
                 if (structure->isAddOn()) {
@@ -204,7 +194,7 @@ void ZergCrush::ManageMacro() {
                     break;
                 }
                 if(structure->getUnitTypeID() == UNIT_TYPEID::TERRAN_BARRACKS && structure->getChainBuild()) {
-                    //std::cout << "wall barrack 2" << std::endl;
+                    std::cout << "wall barrack" << std::endl;
                     TryBuildWallPiece(UNIT_TYPEID::TERRAN_BARRACKS);
                     break;
                 }
@@ -230,29 +220,16 @@ void ZergCrush::ManageMacro() {
 
 void ZergCrush::ManageUpgrades() {
     const ObservationInterface *observation = Observation();
-    auto upgrades = observation->GetUpgrades();
-
-    TryBuildUnit(ABILITY_ID::RESEARCH_STIMPACK, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_COMBATSHIELD, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_CONCUSSIVESHELLS, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONS, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
-    TryBuildUnit(ABILITY_ID::RESEARCH_TERRANINFANTRYARMOR, UNIT_TYPEID::TERRAN_ENGINEERINGBAY);
+    for (auto & upgrade: upgradeOrder->upgradesToBuild(observation)) {
+        TryBuildUnit(upgrade->getAbilityId(), upgrade->getUpgradeStructure());
+    }
 }
 
-
-
 void ZergCrush::ManageArmy() {
-    // TODO: it seems like some army units are being left idle - not sure why...
     const ObservationInterface *observation = Observation();
 
     Units army = observation->GetUnits(Unit::Alliance::Self, IsArmy(observation));
-
-    uint32_t waitUntilSupply = 12; // TODO: Think of better plan
-
+    uint32_t waitUntilSupply = std::max(12, (int) observation->GetUnits(sc2::Unit::Enemy, IsArmy(observation)).size());
 
     auto allSquadrons = armyComposition->getAllSquadrons();
 
@@ -272,14 +249,11 @@ void ZergCrush::ManageArmy() {
                                                                       TargetableBy(observation, squadronLeader),
                                                                       WithinDistanceOf(baseRallyPoint, 30.0f)}));
 
-            if (!attackableEnemies.empty()) {
+            if (!attackableEnemies.empty() || !byBase.empty()) {
                 for (const auto& unit : squadron->getSquadron()) {
                     attackMicro->microUnit(observation, unit);
                 }
-                return true; // Remove squadron from allSquadrons, busy attacking
-            } else if (!byBase.empty()) { // Return to base to defend TODO: may not always want to
-                Actions()->UnitCommand(squadron->getSquadron(), ABILITY_ID::SMART, byBase.front()->pos);
-                return true; // Remove squadron from allSquadrons, busy going back to defend
+                return true; // Remove squadron from allSquadrons, busy attacking or returning to defend base
             }
             return false;
         }
@@ -357,7 +331,7 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
     }
 
     // Set the largest cluster size to send smaller clusters to
-    int minClusterSize = (int) units.size() / 4;
+    int minClusterSize = (int) units.size() / 5;
     size_t largestClusterSize = minClusterSize;
     Point3D largestClusterPosition = baseRallyPoint;
     for (const auto &cluster: clusters) {
@@ -400,7 +374,19 @@ void ZergCrush::ScoutWithUnits(const sc2::ObservationInterface *observation, con
     LowerSupplyDepotsNear(unitLocation, SQUADRON_CLUSTER_DISTANCE*2); // Make sure our army can get through
 
     if (assumedEnemyStartingLocation != nullptr) {
-        // TODO: check if there and no enemies -> then we need to remove assumed enemy location
+        if (scoutingUnits.empty()) return;
+        auto scoutLeader = scoutingUnits.front();
+        if (sc2::Distance2D(scoutLeader->pos, *assumedEnemyStartingLocation) < SQUADRON_CLUSTER_DISTANCE) {
+            sc2::Units attackableEnemies = observation->GetUnits(sc2::Unit::Alliance::Enemy,
+                                                                 CombinedFilter({IsVisible(), WithinDistanceOf(*assumedEnemyStartingLocation, SQUADRON_CLUSTER_DISTANCE)}));
+            if (attackableEnemies.empty()) {
+                assumedEnemyStartingLocation = nullptr;
+                refreshExpansionLocations(observation, scoutLeader->pos);
+                return;
+            }
+        }
+
+
         if (expansionMap.count(*assumedEnemyStartingLocation) > 0) {
             Actions()->UnitCommand(scoutingUnits, ABILITY_ID::MOVE_MOVEPATROL, expansionMap[*assumedEnemyStartingLocation].front());
         }
@@ -570,7 +556,7 @@ const Unit *ZergCrush::FindNearestMineralPatch(const Point2D &start) {
 }
 
 
-// TODO: Copied from MultiplayerBot An estimate of how many workers we should have based on what buildings we have
+// Copied from MultiplayerBot An estimate of how many workers we should have based on what buildings we have
 int ZergCrush::GetExpectedWorkers() {
     const ObservationInterface *observation = Observation();
     Units bases = observation->GetUnits(Unit::Alliance::Self, IsTownHall());
@@ -897,99 +883,160 @@ void ZergCrush::OnGameEnd() {
     std::cout << "Game Ended for: " << std::to_string(Control()->Proto().GetAssignedPort()) << std::endl;
 }
 
-// TODO: Second command center is not being built always
-// TODO: Siege tanks are getting stuck on CactusLE
+
 // TODO: Build order is bad -> do a rush, make more conditions
-// TODO: Supply depots still causing problems, wall causing problems
-// TODO: Some barracks not building
-// TODO: Defense units not attacking back -> check
 void ZergCrush::OnGameStart() {
     auto observation = Observation();
-    enemyStartingLocations = observation->GetGameInfo().enemy_start_locations;
-    expansionLocations = search::CalculateExpansionLocations(observation, Query());
-
-    // Weird clusters at bottom corner
-    expansionLocations.erase(std::find_if(expansionLocations.begin(), expansionLocations.end(), [](auto &location) {
-        return location.x == 0 && location.y == 0;
-    }), expansionLocations.end());
-
-    startingLocation = Observation()->GetStartLocation();
+    startingLocation = observation->GetStartLocation();
     baseRallyPoint = startingLocation;
 
-    setEnemyExpansionLocations();
+    refreshExpansionLocations(observation, startingLocation);
 
     setEnemyRace(observation);
 
     attackMicro = new ZergCrushMicro(Actions());
 
+    std::vector<Upgrade> tvt_upgrades {
+            Upgrade(observation, 20, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_STIMPACK, UPGRADE_ID::STIMPACK),
+            Upgrade(observation, 40, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_COMBATSHIELD, UPGRADE_ID::COMBATSHIELD),
+            Upgrade(observation, 80, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL1, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL1),
+            Upgrade(observation, 80, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL1, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL1),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL2, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL2),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL2, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL2),
+    };
+
+
     std::vector<BuildOrderStructure> tvtStructures = {
-            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
-            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {}, true),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 18, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_MISSILETURRET, true),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 32, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 34, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 21, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 41, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 41, UNIT_TYPEID::TERRAN_STARPORTTECHLAB, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 46, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 48, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 49, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 49, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 52, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 54, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 54, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 60, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 61, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 68, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 74, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 74, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 75, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 76, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 83, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 84, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 85, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 87, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 87, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 90, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 95, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 96, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 96, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_ARMORY),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 108, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 118, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 118, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 134, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 138, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 140, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
+            
     };
 
     std::vector<ArmySquadron *> tvtArmyComposition = {
-            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 2},
-            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SCV, UNIT_TYPEID::TERRAN_COMMANDCENTER, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT), 1, 1},
+            }, SCOUT, false), // Scouting SCV
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_REAPER), 1, 10},
+                    {IsUnit(sc2::UNIT_TYPEID::TERRAN_BARRACKS), 1, 5, true, false},
+                    {IsUnit(sc2::UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 10}
             }),
-            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 2},
+            
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 5, true, false},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
                     {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 3},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BUNKER), 1, 1, Unit::Alliance::Enemy},
+                    {IsUnit(UNIT_TYPEID::TERRAN_PLANETARYFORTRESS), 1, 1, Unit::Alliance::Enemy}
             }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 5},
+                    {IsUnit(UNIT_TYPEID::TERRAN_MARINE), 10, 1}
+            })
+            
     };
 
+
     std::vector<BuildOrderStructure> tvzStructures = {
-            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
-            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {}, true),
+            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
             BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY,{
+                    {IsUnits({UNIT_TYPEID::ZERG_ROACHWARREN, UNIT_TYPEID::ZERG_ROACH}), 1}}),
+            BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnits({UNIT_TYPEID::ZERG_ROACHWARREN, UNIT_TYPEID::ZERG_ROACH}), 1, true}}),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 27, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 28, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 31, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB),
-            BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 31, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 35, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 44, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_BUNKER),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 53, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 57, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 59, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
             BuildOrderStructure(observation, 60, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 64, UNIT_TYPEID::TERRAN_FACTORYTECHLAB),
+            BuildOrderStructure(observation, 61, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 64, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 73, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 78, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 79, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
@@ -997,6 +1044,7 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 82, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 82, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 87, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 95, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_ARMORY),
             BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
@@ -1007,14 +1055,23 @@ void ZergCrush::OnGameStart() {
             BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 140, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 139, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 130, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 134, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 138, UNIT_TYPEID::TERRAN_BARRACKS),
             BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 150, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
+    };
 
+    std::vector<Upgrade> tvz_upgrades {
+            Upgrade(observation, 20, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_STIMPACK, UPGRADE_ID::STIMPACK),
+            Upgrade(observation, 40, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_COMBATSHIELD, UPGRADE_ID::COMBATSHIELD),
+            Upgrade(observation, 75, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL1, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL1),
+            Upgrade(observation, 75, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL1, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL1),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL2, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL2),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL2, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL2),
     };
 
     std::vector<ArmySquadron *> tvzArmyComposition = {
@@ -1022,92 +1079,117 @@ void ZergCrush::OnGameStart() {
                     {IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT), 1, 1},
             }, SCOUT, false), // Scouting SCV
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1,        4},
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 20},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 4, true},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 8, true},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 12},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 5},
+                    {IsUnit(UNIT_TYPEID::TERRAN_MARINE), 8, 4, true},
+                    {IsUnit(UNIT_TYPEID::ZERG_ROACH), 1, 1, Unit::Alliance::Enemy, true, false},
+                    {IsUnit(UNIT_TYPEID::ZERG_BANELING), 4, 1, Unit::Alliance::Enemy, true, false},
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 5},
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 3},
+                    {IsUnit(UNIT_TYPEID::ZERG_ROACH), 5, 1, Unit::Alliance::Enemy, true, false}
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 3},
+                    {IsUnit(UNIT_TYPEID::ZERG_ZERGLING), 5, 1, Unit::Alliance::Enemy, true, false},
+                    {IsUnit(UNIT_TYPEID::ZERG_ROACH), 5, 0, Unit::Alliance::Enemy, false, true}
             }),
             new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
                     {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 4},
             }),
     };
     std::vector<BuildOrderStructure> tvpStructures = {
-            BuildOrderStructure(observation, 13, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, true),
-            BuildOrderStructure(observation, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, true),
-            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 14, UNIT_TYPEID::TERRAN_SUPPLYDEPOT, {}, true),
+            BuildOrderStructure(observation, 15, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 16, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
             BuildOrderStructure(observation, 19, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
             BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 21, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_BUNKER),
-            BuildOrderStructure(observation, 23, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 24, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 24, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 22, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_BARRACKS, {}, true),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 25, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_STARPORT),
-            BuildOrderStructure(observation, 26, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 30, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 37, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 40, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
-            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 43, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 33, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 38, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 42, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 42, UNIT_TYPEID::TERRAN_FACTORY),
             BuildOrderStructure(observation, 45, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 47, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 20, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 49, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 50, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 57, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 57, UNIT_TYPEID::TERRAN_MISSILETURRET, true),
-            BuildOrderStructure(observation, 59, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
-            BuildOrderStructure(observation, 60, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 64, UNIT_TYPEID::TERRAN_FACTORYTECHLAB),
-            BuildOrderStructure(observation, 70, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 70, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 73, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 78, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 79, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 51, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 54, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 54, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 62, UNIT_TYPEID::TERRAN_ENGINEERINGBAY),
+            BuildOrderStructure(observation, 67, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 70, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 74, UNIT_TYPEID::TERRAN_REFINERY),
             BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 95, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_ARMORY),
-            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 101, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 81, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 86, UNIT_TYPEID::TERRAN_STARPORTREACTOR, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 90, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 90, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 90, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 91, UNIT_TYPEID::TERRAN_ORBITALCOMMAND, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 93, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 96, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 98, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_FACTORYTECHLAB, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 100, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
             BuildOrderStructure(observation, 108, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_REFINERY),
-            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_COMMANDCENTER),
-            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 126, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
-            BuildOrderStructure(observation, 139, UNIT_TYPEID::TERRAN_FACTORY),
-            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 144, UNIT_TYPEID::TERRAN_BARRACKS),
-            BuildOrderStructure(observation, 150, UNIT_TYPEID::TERRAN_FACTORYREACTOR, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 112, UNIT_TYPEID::TERRAN_BARRACKSREACTOR, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 114, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB),
+            BuildOrderStructure(observation, 121, UNIT_TYPEID::TERRAN_ARMORY),
+            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_REFINERY),
+            BuildOrderStructure(observation, 125, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 129, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 134, UNIT_TYPEID::TERRAN_COMMANDCENTER),
+            BuildOrderStructure(observation, 134, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 170, UNIT_TYPEID::TERRAN_SUPPLYDEPOT),
+            BuildOrderStructure(observation, 171, UNIT_TYPEID::TERRAN_STARPORT),
+            BuildOrderStructure(observation, 171, UNIT_TYPEID::TERRAN_FACTORY),
+            BuildOrderStructure(observation, 172, UNIT_TYPEID::TERRAN_BARRACKS),
+            BuildOrderStructure(observation, 178, UNIT_TYPEID::TERRAN_STARPORTREACTOR),
+            BuildOrderStructure(observation, 178, UNIT_TYPEID::TERRAN_FACTORYTECHLAB),
     };
 
+    std::vector<Upgrade> tvp_upgrades {
+            Upgrade(observation, 20, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_STIMPACK, UPGRADE_ID::STIMPACK),
+            Upgrade(observation, 40, UNIT_TYPEID::TERRAN_BARRACKSTECHLAB, ABILITY_ID::RESEARCH_COMBATSHIELD, UPGRADE_ID::COMBATSHIELD),
+            Upgrade(observation, 75, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL1, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL1),
+            Upgrade(observation, 75, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL1, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL1),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYARMORLEVEL2, UPGRADE_ID::TERRANINFANTRYARMORSLEVEL2),
+            Upgrade(observation, 101, UNIT_TYPEID::TERRAN_ENGINEERINGBAY, ABILITY_ID::RESEARCH_TERRANINFANTRYWEAPONSLEVEL2, UPGRADE_ID::TERRANINFANTRYWEAPONSLEVEL2),
+    };
+
+
     std::vector<ArmySquadron *> tvpArmyComposition = {
-        new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
-                {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS),        1, 4},
-                {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 20},
-        }),
-        new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
-                {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 10},
-        }),
-        new ArmySquadron(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
-                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS), 1, 3},
-        }),
-        new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
-                {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 5},
-        }),
-        new ArmySquadron(observation, UNIT_TYPEID::TERRAN_VIKINGASSAULT, UNIT_TYPEID::TERRAN_STARPORT, {
-                {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 4},
-        }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SCV, UNIT_TYPEID::TERRAN_COMMANDCENTER, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_SUPPLYDEPOT), 1, 1},
+            }, SCOUT, false), // Scouting SCV
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARINE, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKS),        1, 4, true},
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 8, true}
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MARAUDER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSTECHLAB), 1, 5},
+                    {IsUnit(UNIT_TYPEID::PROTOSS_STALKER), 3, 5, Unit::Alliance::Enemy, true, false}
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_REAPER, UNIT_TYPEID::TERRAN_BARRACKS, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_BARRACKSREACTOR), 1, 3},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_HELLION, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORY), 1, 3, true},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_MEDIVAC, UNIT_TYPEID::TERRAN_STARPORT, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_STARPORT), 1, 3, true},
+            }),
+            new ArmySquadron(observation, UNIT_TYPEID::TERRAN_SIEGETANK, UNIT_TYPEID::TERRAN_FACTORY, {
+                    {IsUnit(UNIT_TYPEID::TERRAN_FACTORYTECHLAB), 1, 4, true},
+                    {IsUnit(UNIT_TYPEID::TERRAN_MARINE), 8, 1, true},
+            }),
 
     };
 
@@ -1116,21 +1198,39 @@ void ZergCrush::OnGameStart() {
         case Terran: {
             buildOrder = new BuildOrder(tvtStructures);
             armyComposition = new ArmyComposition(tvtArmyComposition);
+            upgradeOrder = new UpgradeOrder(tvt_upgrades);
             break;
         }
         case Zerg: {
             buildOrder = new BuildOrder(tvzStructures);
             armyComposition = new ArmyComposition(tvzArmyComposition);
+            upgradeOrder = new UpgradeOrder(tvt_upgrades);
             break;
         }
         case Protoss:
             buildOrder = new BuildOrder(tvpStructures);
             armyComposition = new ArmyComposition(tvpArmyComposition);
+            upgradeOrder = new UpgradeOrder(tvt_upgrades);
             break;
     }
 }
 
-void ZergCrush::setEnemyExpansionLocations() {
+/**
+ * Refresh expansionLocations and expansions map and sort based on a reference location
+ */
+void ZergCrush::refreshExpansionLocations(const ObservationInterface *observation, Point2D referenceLocation) {
+    enemyStartingLocations = observation->GetGameInfo().enemy_start_locations;
+    expansionLocations = search::CalculateExpansionLocations(observation, Query());
+
+    // Weird clusters at bottom corner
+    expansionLocations.erase(std::remove_if(expansionLocations.begin(), expansionLocations.end(), [](auto &location) {
+        return location.x == 0.0f && location.y == 0.0f;
+    }), expansionLocations.end());
+
+    setEnemyExpansionLocations(referenceLocation);
+}
+
+void ZergCrush::setEnemyExpansionLocations(Point2D referenceLocation) {
     for (const auto &expansionLocation: expansionLocations) {
         float distanceToAllyStartingLocation = Distance2D(startingLocation, expansionLocation);
         float minDistanceToEnemyStartingLocation = std::numeric_limits<float>::max();
@@ -1153,18 +1253,23 @@ void ZergCrush::setEnemyExpansionLocations() {
             expansionMap[startingLocation].push_back(expansionLocation);
         }
     }
-    sortEnemyExpansionLocations();
+    sortEnemyExpansionLocations(referenceLocation);
 }
 
-void ZergCrush::sortEnemyExpansionLocations() {
+void ZergCrush::sortEnemyExpansionLocations(Point2D referenceLocation) {
     for (auto& expansionsByStartingLocation : expansionMap) {
         auto& expansionLocationsByLocation = expansionsByStartingLocation.second;
 
-        // Sort the expansions based on the distance to the starting location
-        std::sort(expansionLocationsByLocation.begin(), expansionLocationsByLocation.end(), [this](const auto& a, const auto& b) {
-            return Distance2D(startingLocation, a) < Distance2D(startingLocation, b);
+        // Sort the expansions based on the distance to the reference location
+        std::sort(expansionLocationsByLocation.begin(), expansionLocationsByLocation.end(), [referenceLocation](const auto& a, const auto& b) {
+            return Distance2D(referenceLocation, a) < Distance2D(referenceLocation, b);
         });
     }
+
+    // And enemy base locations too
+    std::sort(enemyStartingLocations.begin(), enemyStartingLocations.end(), [referenceLocation](const auto& a, const auto& b) {
+        return Distance2D(referenceLocation, a) < Distance2D(referenceLocation, b);
+    });
 }
 
 void ZergCrush::OnUnitEnterVision(const sc2::Unit *) {

@@ -102,6 +102,11 @@ private:
     const Point2D* assumedEnemyStartingLocation = nullptr;
 
     /**
+     * Check our expansions too when scouting
+     */
+     bool checkOurExpansions = false;
+
+    /**
      * Queried at the start of the game, represents our starting location on the map
      */
     Point3D startingLocation;
@@ -123,7 +128,7 @@ private:
 
     void setEnemyRace(const ObservationInterface *observation);
 
-    bool TryBuildStructureUnit(AbilityID ability_type_for_structure, const Unit *unit, Point2D location, bool isExpansion);
+    bool TryBuildStructureUnit(AbilityID abilityTypeForStructure, const Unit *unit, Point2D location, bool isExpansion);
 
     static bool IsTooCloseToStructures(const Point2D &buildLocation, const Units &structures, float minDistance);
 
@@ -183,6 +188,10 @@ private:
     void RaiseAllSupplyDepots();
 
     void refreshExpansionLocations(const ObservationInterface *observation, Point2D referenceLocation);
+
+    void TryScannerSweep(const ObservationInterface *observation, Point2D scanLocation);
+
+    std::vector<Point2D> getExpansionsToCheck() const;
 };
 
 #endif

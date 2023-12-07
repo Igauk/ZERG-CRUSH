@@ -95,6 +95,10 @@ public:
             case sc2::UNIT_TYPEID::TERRAN_CYCLONE:
                 handleCycloneMicro(observation, unit);
                 break;
+            case sc2::UNIT_TYPEID::TERRAN_VIKINGFIGHTER:
+            case sc2::UNIT_TYPEID::TERRAN_VIKINGASSAULT:
+                handleVikingMicro(observation, unit);
+                break;
             default:
                 micro(observation, unit);
         }
@@ -159,6 +163,29 @@ private:
         } else {
             micro(observation, unit);
         }
+    }
+
+    void handleVikingMicro(const sc2::ObservationInterface *observation, const sc2::Unit *unit) {
+        auto airUnits = observation->GetUnits(sc2::Unit::Enemy,
+                                              CombinedFilter({sc2::IsVisible(),
+                                                              TargetableBy(observation, sc2::UNIT_TYPEID::TERRAN_VIKINGFIGHTER),
+                                                              WithinDistanceOf(unit, 10.0f)}));
+        auto collosi = observation->GetUnits(sc2::Unit::Enemy,
+                                             CombinedFilter({sc2::IsVisible(),
+                                                             sc2::IsUnit(sc2::UNIT_TYPEID::PROTOSS_COLOSSUS),
+                                                             WithinDistanceOf(unit, 10.0f)}));
+        bool attackableAirUnits = !airUnits.empty() || !collosi.empty();
+        bool isInAssaultMode = (unit->unit_type == sc2::UNIT_TYPEID::TERRAN_VIKINGASSAULT);
+
+        if (attackableAirUnits && isInAssaultMode) {
+            // Switch to Fighter Mode when there are air units in range
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_VIKINGFIGHTERMODE);
+        } else if (!attackableAirUnits && !isInAssaultMode) {
+            // Switch to Assault Mode when there are no air units in range
+            actionInterface->UnitCommand(unit, sc2::ABILITY_ID::MORPH_VIKINGASSAULTMODE);
+        }
+
+        micro(observation, unit);
     }
 
     void handleCycloneMicro(const sc2::ObservationInterface* observation, const sc2::Unit* unit) {

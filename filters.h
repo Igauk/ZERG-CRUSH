@@ -52,6 +52,12 @@ struct HasRangeInRange {
     const sc2::ObservationInterface* observation_;
 };
 
+struct IsInvisible {
+    bool operator()(const sc2::Unit& unit) {
+        return unit.display_type == sc2::Unit::DisplayType::Hidden;
+    };
+};
+
 
 struct IsFlying {
     bool operator()(const sc2::Unit &unit) {
@@ -123,8 +129,8 @@ struct HasAttribute {
 };
 
 struct TargetableBy {
-    TargetableBy(const sc2::ObservationInterface *obs, const sc2::Unit *attackingUnit) {
-        auto weapons = obs->GetUnitTypeData().at(attackingUnit->unit_type).weapons;
+    TargetableBy(const sc2::ObservationInterface *obs, sc2::UnitTypeID unitTypeId) {
+        auto weapons = obs->GetUnitTypeData().at(unitTypeId).weapons;
         for (const auto &weapon: weapons) {
             switch (weapon.type) {
                 case sc2::Weapon::TargetType::Ground:
@@ -158,7 +164,9 @@ struct TargetableBy {
         }
     }
 
-    bool operator()(const sc2::Unit &unit) const {
+    TargetableBy(const sc2::ObservationInterface *observation, const sc2::Unit* unit): TargetableBy(observation, unit->unit_type) {}
+
+        bool operator()(const sc2::Unit &unit) const {
         switch (targetType_) {
             case sc2::Weapon::TargetType::Ground:
                 return !unit.is_flying;
